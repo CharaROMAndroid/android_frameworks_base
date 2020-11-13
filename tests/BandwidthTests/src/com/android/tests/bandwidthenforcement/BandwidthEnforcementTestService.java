@@ -164,7 +164,7 @@ public class BandwidthEnforcementTestService extends IntentService {
 
                 final byte[] query = buildDnsQuery("www", "android", "com");
                 final DatagramPacket queryPacket = new DatagramPacket(
-                        query, query.length, InetAddress.parseNumericAddress("8.8.8.8"), 53);
+                        query, query.length, InetAddress.parseNumericAddress("9.9.9.9"), 53);
                 socket.send(queryPacket);
 
                 final byte[] reply = new byte[query.length];
