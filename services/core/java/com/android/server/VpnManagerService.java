@@ -75,6 +75,8 @@ import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.List;
 
+import lineageos.providers.LineageSettings;
+
 /**
  * Service that tracks and manages VPNs, and backs the VpnService and VpnManager APIs.
  * @hide
