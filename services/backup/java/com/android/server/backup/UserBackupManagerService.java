@@ -369,6 +369,14 @@ public class UserBackupManagerService {
         String currentTransport =
                 Settings.Secure.getStringForUser(
                         context.getContentResolver(), Settings.Secure.BACKUP_TRANSPORT, userId);
+        if (currentTransport.equals("com.google.android.gms/.backup.BackupTransportService")) {
+            Settings.Secure.putStringForUser(
+                context.getContentResolver(), Settings.Secure.BACKUP_TRANSPORT,
+                "com.stevesoltys.seedvault.transport.ConfigurableBackupTransport", userId);
+            currentTransport =
+                Settings.Secure.getStringForUser(
+                    context.getContentResolver(), Settings.Secure.BACKUP_TRANSPORT, userId);
+        }
         if (TextUtils.isEmpty(currentTransport)) {
             currentTransport = null;
         }
