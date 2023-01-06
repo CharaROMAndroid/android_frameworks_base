@@ -932,6 +932,14 @@ public class VpnManagerService extends IVpnManager.Stub {
             clearAppExclusionList(vpn, packageName);
 
             vpn.refreshPlatformVpnAppExclusionList();
+            vpn.setAlwaysOnPackage(vpn.getAlwaysOnPackage(), vpn.getLockdown(),
+                    vpn.getLockdownAllowlist());
+
+            if (TextUtils.equals(vpn.getPackage(), packageName) && userId == UserHandle.USER_SYSTEM
+                    && vpn.isGlobalVpn()) {
+                LineageSettings.Global.putString(mContext.getContentResolver(),
+                        LineageSettings.Global.GLOBAL_VPN_APP, "");
+            }
         }
     }
 
@@ -950,6 +958,8 @@ public class VpnManagerService extends IVpnManager.Stub {
                 clearAppExclusionList(vpn, packageName);
 
                 vpn.refreshPlatformVpnAppExclusionList();
+                vpn.setAlwaysOnPackage(vpn.getAlwaysOnPackage(), vpn.getLockdown(),
+                        vpn.getLockdownAllowlist());
             }
         }
     }
