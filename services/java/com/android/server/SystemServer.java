@@ -1836,6 +1836,10 @@ public final class SystemServer implements Dumpable {
             mSystemServiceManager.startService(LogcatManagerService.class);
             t.traceEnd();
 
+            t.traceBegin("StartSmart5gService");
+            mSystemServiceManager.startService(Smart5gService.class);
+            t.traceEnd();
+
             if (!isWatch && !isTv && !isAutomotive
                     && android.security.Flags.aflApi()) {
                 t.traceBegin("StartIntrusionDetectionService");
