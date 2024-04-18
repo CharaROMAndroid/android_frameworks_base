@@ -508,6 +508,37 @@ public class SecureSettingsValidators {
                 ANY_LONG_VALIDATOR);
         VALIDATORS.put(Secure.CONTENT_SAFETY_SANDBOXED_UNBIND_TIMEOUT_MS,
                 ANY_LONG_VALIDATOR);
+        VALIDATORS.put(Secure.STRICT_LOCATION_REDACTION, BOOLEAN_VALIDATOR);
+        VALIDATORS.put(Secure.CAMERA_OFF_TIMEOUT,
+                new DiscreteValueValidator(new String[] {
+                        "0",
+                        "15000",
+                        "30000",
+                        "60000",
+                        "120000",
+                        "300000",
+                        "600000",
+                        "1800000",
+                        "3600000",
+                        "7200000",
+                        "14400000",
+                        "28800000"
+                }));
+        VALIDATORS.put(Secure.MIC_OFF_TIMEOUT,
+                new DiscreteValueValidator(new String[] {
+                        "0",
+                        "15000",
+                        "30000",
+                        "60000",
+                        "120000",
+                        "300000",
+                        "600000",
+                        "1800000",
+                        "3600000",
+                        "7200000",
+                        "14400000",
+                        "28800000"
+                }));
         VALIDATORS.put(Secure.ACCESSIBILITY_MOUSE_KEYS_ENABLED, BOOLEAN_VALIDATOR);
         VALIDATORS.put(Secure.ACCESSIBILITY_MOUSE_KEYS_ACCELERATION,
                 new InclusiveFloatRangeValidator(0, 1.0f));
