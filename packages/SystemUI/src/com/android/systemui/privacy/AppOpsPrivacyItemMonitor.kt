@@ -17,12 +17,18 @@
 package com.android.systemui.privacy
 
 import android.app.ActivityManager
+import android.app.AlarmManager
+import android.app.AlarmManager.OnAlarmListener
 import android.app.AppOpsManager
 import android.content.Context
 import android.content.PermissionChecker
 import android.content.pm.PackageManager
 import android.content.pm.UserInfo
+import android.database.ContentObserver
+import android.hardware.SensorPrivacyManager
+import android.os.SystemClock
 import android.os.UserHandle
+import android.provider.Settings
 import com.android.internal.annotations.GuardedBy
 import com.android.internal.annotations.VisibleForTesting
 import com.android.internal.logging.UiEvent
@@ -65,16 +71,20 @@ constructor(
 
     @VisibleForTesting
     companion object {
-        val OPS_MIC_CAMERA =
+        private val OPS_MIC =
             intArrayOf(
-                AppOpsManager.OP_CAMERA,
-                AppOpsManager.OP_PHONE_CALL_CAMERA,
                 AppOpsManager.OP_RECORD_AUDIO,
                 AppOpsManager.OP_PHONE_CALL_MICROPHONE,
                 AppOpsManager.OP_RECEIVE_AMBIENT_TRIGGER_AUDIO,
                 AppOpsManager.OP_RECEIVE_EXPLICIT_USER_INTERACTION_AUDIO,
                 AppOpsManager.OP_RECEIVE_SANDBOX_TRIGGER_AUDIO,
             )
+        private val OPS_CAMERA =
+            intArrayOf(
+                AppOpsManager.OP_CAMERA,
+                AppOpsManager.OP_PHONE_CALL_CAMERA,
+            )
+        val OPS_MIC_CAMERA = OPS_MIC + OPS_CAMERA
         val OPS_LOCATION =
             intArrayOf(AppOpsManager.OP_FINE_LOCATION, AppOpsManager.OP_COARSE_LOCATION)
         val OPS = OPS_MIC_CAMERA + OPS_LOCATION
@@ -267,6 +277,7 @@ constructor(
                     Runnable::run, null, micTimeoutListener)
         }
     }
+
 
     override fun startListening(callback: PrivacyItemMonitor.Callback) {
         synchronized(lock) {
