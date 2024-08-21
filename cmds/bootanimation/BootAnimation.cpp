@@ -736,13 +736,15 @@ bool BootAnimation::findBootAnimationFileInternal(const std::vector<std::string>
 
 void BootAnimation::findBootAnimationFile() {
     ATRACE_CALL();
-    const bool playDarkAnim = android::base::GetIntProperty("ro.boot.theme", 0) == 1;
-    const std::string productBootanimationFile = PRODUCT_BOOTANIMATION_DIR +
-        android::base::GetProperty("ro.product.bootanim.file", playDarkAnim ?
-        PRODUCT_BOOTANIMATION_DARK_FILE : PRODUCT_BOOTANIMATION_FILE);
+    char value[PROPERTY_VALUE_MAX];
+    property_get("persist.sys.bootanimation_style", value, "0");
+    const int bootAnimStyle = atoi(value);
+    const char* selectedBootAnimation = 
+        (bootAnimStyle >= 0 && bootAnimStyle < 6) 
+        ? BOOT_ANIMATION_FILES[bootAnimStyle] 
+        : BOOT_ANIMATION_FILES[0];
     static const std::vector<std::string> bootFiles = {
-        APEX_BOOTANIMATION_FILE, productBootanimationFile,
-        OEM_BOOTANIMATION_FILE, SYSTEM_BOOTANIMATION_FILE
+        std::string(selectedBootAnimation)
     };
     static const std::vector<std::string> shutdownFiles = {
         PRODUCT_SHUTDOWNANIMATION_FILE, OEM_SHUTDOWNANIMATION_FILE, SYSTEM_SHUTDOWNANIMATION_FILE, ""
