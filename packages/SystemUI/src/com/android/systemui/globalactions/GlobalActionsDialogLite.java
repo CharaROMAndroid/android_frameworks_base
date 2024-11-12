@@ -172,6 +172,8 @@ import com.android.systemui.util.RingerModeTracker;
 import com.android.systemui.util.settings.GlobalSettings;
 import com.android.systemui.util.settings.SecureSettings;
 
+import lineageos.providers.LineageSettings;
+
 import dagger.Lazy;
 
 import lineageos.app.LineageGlobalActions;
@@ -1540,7 +1542,9 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
 
         @Override
         public boolean showDuringKeyguard() {
-            return true;
+            return LineageSettings.Secure.getIntForUser(mContext.getContentResolver(),
+                    LineageSettings.Secure.USER_SWITCHER_HIDDEN_WHEN_LOCKED,
+                    /* defaultValue */ 0, getCurrentUser().id) == 0;
         }
 
         @Override
