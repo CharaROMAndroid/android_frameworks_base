@@ -42,12 +42,14 @@ import com.android.systemui.statusbar.connectivity.AccessPointController
 import com.android.systemui.statusbar.pipeline.shared.ui.binder.InternetTileBinder
 import com.android.systemui.statusbar.pipeline.shared.ui.model.InternetTileModel
 import com.android.systemui.statusbar.pipeline.shared.ui.viewmodel.InternetTileViewModel
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import javax.inject.Inject
 
 class InternetTileNewImpl
 @Inject
 constructor(
     host: QSHost,
+    keyguardStateController: KeyguardStateController,
     uiEventLogger: QsEventLogger,
     @Background backgroundLooper: Looper,
     @Main private val mainHandler: Handler,
@@ -62,7 +64,7 @@ constructor(
     private val internetDetailsViewModelFactory: InternetDetailsViewModel.Factory,
     private val wifiStateWorker: WifiStateWorker,
 ) :
-    QSTileImpl<QSTile.BooleanState>(
+    SecureQSTile<QSTile.BooleanState>(
         host,
         uiEventLogger,
         backgroundLooper,
@@ -72,6 +74,7 @@ constructor(
         statusBarStateController,
         activityStarter,
         qsLogger,
+        keyguardStateController,
     ) {
     private var model: InternetTileModel = viewModel.tileModel.value
 
@@ -92,7 +95,10 @@ constructor(
         }
     }
 
-    override fun handleClick(expandable: Expandable?) {
+    override fun handleClick(expandable: Expandable?, keyguardShowing: Boolean) {
+        if (checkKeyguard(expandable, keyguardShowing)) {
+              return
+          }
         mainHandler.post {
             internetDialogManager.create(
                 aboveStatusBar = true,
