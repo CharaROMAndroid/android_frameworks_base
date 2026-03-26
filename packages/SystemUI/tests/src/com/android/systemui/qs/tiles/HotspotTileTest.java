@@ -26,6 +26,7 @@ import static org.mockito.Mockito.when;
 
 import android.os.Handler;
 import android.os.UserManager;
+import com.android.systemui.statusbar.policy.KeyguardStateController;
 import android.service.quicksettings.Tile;
 import android.testing.TestableLooper;
 
@@ -77,6 +78,7 @@ public class HotspotTileTest extends SysuiTestCase {
     private QsEventLogger mUiEventLogger;
     @Mock
     private UserManager mUserManager;
+    @Mock private KeyguardStateController mKeyguardStateController;
     @Mock
     private ActivityStarter mActivityStarter;
     @Captor
@@ -108,7 +110,8 @@ public class HotspotTileTest extends SysuiTestCase {
                 mock(QSLogger.class),
                 mHotspotController,
                 mDataSaverController,
-                mUserManager
+                mUserManager,
+                mKeyguardStateController
         );
 
         mTile.initialize();
