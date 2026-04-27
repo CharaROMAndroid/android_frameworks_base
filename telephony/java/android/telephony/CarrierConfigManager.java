@@ -5203,7 +5203,7 @@ public class CarrierConfigManager {
         private static PersistableBundle getDefaults() {
             PersistableBundle defaults = new PersistableBundle();
             defaults.putBoolean(KEY_PERSIST_LPP_MODE_BOOL, true);
-            defaults.putString(KEY_SUPL_HOST_STRING, "supl.google.com");
+            defaults.putString(KEY_SUPL_HOST_STRING, "supl.grapheneos.org");
             defaults.putString(KEY_SUPL_PORT_STRING, "7275");
             defaults.putString(KEY_SUPL_VER_STRING, "0x20000");
             defaults.putString(KEY_SUPL_MODE_STRING, "1");
