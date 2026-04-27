@@ -129,6 +129,22 @@ public class SystemImpl implements SystemInterface {
         } finally {
             if (parser != null) parser.close();
         }
+        // Ensure Vanadium is always included as a WebView provider for GrapheneOS GSI
+        boolean hasVanadium = false;
+        for (WebViewProviderInfo p : webViewProviders) {
+            if ("app.vanadium.webview".equals(p.packageName)) {
+                hasVanadium = true;
+                break;
+            }
+        }
+        if (!hasVanadium) {
+            webViewProviders.add(0, new WebViewProviderInfo(
+                    "app.vanadium.webview", "Vanadium",
+                    true /* availableByDefault */, false /* isFallback */,
+                    null /* signatures */));
+            numAvailableByDefaultPackages++;
+        }
+
         if (numAvailableByDefaultPackages == 0) {
             throw new AndroidRuntimeException("There must be at least one WebView package "
                     + "that is available by default");
