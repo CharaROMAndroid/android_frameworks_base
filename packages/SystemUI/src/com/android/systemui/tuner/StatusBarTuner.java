@@ -29,6 +29,7 @@ import com.android.crdroid.utils.IconTinterUtils;
 import com.android.internal.logging.MetricsLogger;
 import com.android.internal.logging.nano.MetricsProto.MetricsEvent;
 import com.android.settingslib.widget.SettingsBasePreferenceFragment;
+import com.android.systemui.crdroid.utils.IconTinterUtils;
 import com.android.systemui.res.R;
 
 public class StatusBarTuner extends SettingsBasePreferenceFragment {
