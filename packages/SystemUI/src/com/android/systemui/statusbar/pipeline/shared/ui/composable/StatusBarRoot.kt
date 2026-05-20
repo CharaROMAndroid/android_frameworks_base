@@ -609,15 +609,6 @@ private fun addBatteryComposable(
                 batteryComposeView.visibility = if (isBlocked) View.GONE else View.VISIBLE
             }
     }
-
-    batteryComposeView.repeatWhenAttached {
-        statusBarViewModel.iconBlockList
-            .map { blocked -> blocked.contains(SLOT_BATTERY) }
-            .distinctUntilChanged()
-            .collect { isBlocked ->
-                batteryComposeView.visibility = if (isBlocked) View.GONE else View.VISIBLE
-            }
-    }
 }
 
 /**
