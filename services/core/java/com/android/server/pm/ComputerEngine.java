@@ -1683,9 +1683,11 @@ public class ComputerEngine implements Computer {
         // * com.android.vending - microG Companion
         // * com.google.android.gms - microG Services
         // * revanced - revanced microG Services
+        // * com.google.android.gsf - microG Services Framework Proxy
         Set<String> allowlistedPackages = Set.of(
             "com.android.vending",  // microG Companion
-            "com.google.android.gms" // microG Services
+            "com.google.android.gms", // microG Services
+            "com.google.android.gsf" // microG Services Framework Proxy
         );
 
         if (!allowlistedPackages.contains(p.getPackageName()) &&
