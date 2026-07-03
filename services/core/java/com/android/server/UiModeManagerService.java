@@ -548,7 +548,7 @@ final class UiModeManagerService extends SystemService {
         int mode = Secure.getIntForUser(getContext().getContentResolver(), Secure.UI_NIGHT_MODE,
                 mNightMode.get(), 0);
         if (mode == MODE_NIGHT_AUTO || mode == MODE_NIGHT_CUSTOM) {
-            mode = MODE_NIGHT_YES;
+            mode = mComputedNightMode ? MODE_NIGHT_YES : MODE_NIGHT_NO;
         }
         SystemProperties.set(SYSTEM_PROPERTY_DEVICE_THEME, Integer.toString(mode));
     }
