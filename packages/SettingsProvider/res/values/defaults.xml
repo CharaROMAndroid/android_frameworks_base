@@ -81,6 +81,9 @@
     <string name="def_trusted_sound" translatable="false">/product/media/audio/ui/Trusted.ogg</string>
     <string name="def_wireless_charging_started_sound" translatable="false">/product/media/audio/ui/WirelessChargingStarted.ogg</string>
     <string name="def_charging_started_sound" translatable="false">/product/media/audio/ui/ChargingStarted.ogg</string>
+    <string name="def_charging_started_sound_low" translatable="false">/product/media/audio/ui/charging_started_low.flac</string>
+    <string name="def_charging_started_sound_medium" translatable="false">/product/media/audio/ui/charging_started_medium.flac</string>
+    <string name="def_charging_started_sound_high" translatable="false">/product/media/audio/ui/charging_started_high.flac</string>
 
     <!-- sound trigger detection service default values -->
     <integer name="def_max_sound_trigger_detection_service_ops_per_day" translatable="false">1000</integer>

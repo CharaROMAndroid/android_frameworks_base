@@ -970,7 +970,7 @@ public class Notifier {
     /**
      * Called when wired charging has started - to provide user feedback
      */
-    public void onWiredChargingStarted(@UserIdInt int userId) {
+    public void onWiredChargingStarted(int batteryLevel, @UserIdInt int userId) {
         if (DEBUG) {
             Slog.d(TAG, "onWiredChargingStarted");
         }
@@ -978,7 +978,8 @@ public class Notifier {
         mSuspendBlocker.acquire();
         Message msg = mHandler.obtainMessage(MSG_WIRED_CHARGING_STARTED);
         msg.setAsynchronous(true);
-        msg.arg1 = userId;
+        msg.arg1 = batteryLevel;
+        msg.arg2 = userId;
         mHandler.sendMessage(msg);
     }
 
@@ -1182,7 +1183,8 @@ public class Notifier {
         }
     };
 
-    private void playChargingStartedFeedback(@UserIdInt int userId, boolean wireless) {
+    private void playChargingStartedFeedback(
+            int batteryLevel, @UserIdInt int userId, boolean wireless) {
         if (!isChargingFeedbackEnabled(userId)) {
             return;
         }
@@ -1206,9 +1208,27 @@ public class Notifier {
             }
 
             // play sound
-            final String soundPath = Settings.Global.getString(mContext.getContentResolver(),
-                    wireless ? Settings.Global.WIRELESS_CHARGING_STARTED_SOUND
-                            : Settings.Global.CHARGING_STARTED_SOUND);
+            final String soundSettingKey;
+            final String soundFallbackPath;
+            if (wireless) {
+                soundSettingKey = Settings.Global.WIRELESS_CHARGING_STARTED_SOUND;
+                soundFallbackPath = "/product/media/audio/ui/WirelessChargingStarted.ogg";
+            } else if (batteryLevel <= 20) {
+                soundSettingKey = Settings.Global.CHARGING_STARTED_SOUND_LOW;
+                soundFallbackPath = "/product/media/audio/ui/charging_started_low.flac";
+            } else if (batteryLevel < 80) {
+                soundSettingKey = Settings.Global.CHARGING_STARTED_SOUND_MEDIUM;
+                soundFallbackPath = "/product/media/audio/ui/charging_started_medium.flac";
+            } else {
+                soundSettingKey = Settings.Global.CHARGING_STARTED_SOUND_HIGH;
+                soundFallbackPath = "/product/media/audio/ui/charging_started_high.flac";
+            }
+
+            String soundPath = Settings.Global.getString(
+                    mContext.getContentResolver(), soundSettingKey);
+            if (soundPath == null) {
+                soundPath = soundFallbackPath;
+            }
             if ("silent".equals(soundPath)) {
                 mIsPlayingChargingStartedFeedback.set(false);
                 return;
@@ -1231,7 +1251,7 @@ public class Notifier {
 
     private void showWirelessChargingStarted(int batteryLevel, @UserIdInt int userId) {
         // play sounds + haptics
-        playChargingStartedFeedback(userId, true /* wireless */);
+        playChargingStartedFeedback(batteryLevel, userId, true /* wireless */);
 
         // show animation
         if (mShowWirelessChargingAnimationConfig && mStatusBarManagerInternal != null) {
@@ -1240,8 +1260,8 @@ public class Notifier {
         mSuspendBlocker.release();
     }
 
-    private void showWiredChargingStarted(@UserIdInt int userId) {
-        playChargingStartedFeedback(userId, false /* wireless */);
+    private void showWiredChargingStarted(int batteryLevel, @UserIdInt int userId) {
+        playChargingStartedFeedback(batteryLevel, userId, false /* wireless */);
         mSuspendBlocker.release();
     }
 
@@ -1564,7 +1584,7 @@ public class Notifier {
                     showChargingStopped(msg.arg1, false /* wireless */);
                     break;
                 case MSG_WIRED_CHARGING_STARTED:
-                    showWiredChargingStarted(msg.arg1);
+                    showWiredChargingStarted(msg.arg1, msg.arg2);
                     break;
                 case MSG_SCREEN_POLICY:
                     screenPolicyChanging(msg.arg1, msg.arg2);

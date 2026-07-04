@@ -15493,6 +15493,27 @@ public final class Settings {
         public static final String CHARGING_STARTED_SOUND = "charging_started_sound";
 
         /**
+         * URI for "wired charging started" sound when battery is low (<=20%).
+         * @hide
+         */
+        @Readable
+        public static final String CHARGING_STARTED_SOUND_LOW = "charging_started_sound_low";
+
+        /**
+         * URI for "wired charging started" sound when battery is medium (20-80%).
+         * @hide
+         */
+        @Readable
+        public static final String CHARGING_STARTED_SOUND_MEDIUM = "charging_started_sound_medium";
+
+        /**
+         * URI for "wired charging started" sound when battery is high (>80%).
+         * @hide
+         */
+        @Readable
+        public static final String CHARGING_STARTED_SOUND_HIGH = "charging_started_sound_high";
+
+        /**
          * Whether to play a sound for charging events.
          * @deprecated Use {@link android.provider.Settings.Secure#CHARGING_SOUNDS_ENABLED} instead
          * @hide
