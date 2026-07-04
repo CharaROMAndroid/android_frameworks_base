@@ -1241,7 +1241,7 @@ public class Notifier {
                 }
                 final Ringtone sfx = RingtoneManager.getRingtone(mContext, soundUri);
                 if (sfx != null) {
-                    sfx.setStreamType(AudioManager.STREAM_SYSTEM);
+                    sfx.setStreamType(AudioManager.STREAM_NOTIFICATION);
                     sfx.play();
                 }
             }
