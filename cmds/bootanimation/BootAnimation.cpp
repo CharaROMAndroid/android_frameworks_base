@@ -86,19 +86,7 @@ static const char* const BOOT_ANIMATION_FILES[] = {
     "/product/media/bootanimation.zip", //0
     "/product/media/bootanimation_evo_default.zip", //1
     "/product/media/bootanimation_evo_reveal.zip", //2
-    "/product/media/bootanimation_aokp.zip", //3
-    "/product/media/bootanimation_cr.zip", //4
-    "/product/media/bootanimation_cm.zip", //5
-    "/product/media/bootanimation_ctos.zip", //6
-    "/product/media/bootanimation_atvr.zip", //7
-    "/product/media/bootanimation_du.zip", //8
-    "/product/media/bootanimation_google.zip", //9
-    "/product/media/bootanimation_google_monet.zip", //10
-    "/product/media/bootanimation_pac.zip", //11
-    "/product/media/bootanimation_rr.zip", //12
-    "/product/media/bootanimation_slim.zip", //13
-    "/product/media/bootanimation_valorant.zip", //14
-    "/data/misc/bootanim/bootanimation.zip",
+    "/product/media/bootanimation_meow.zip"
 };
 
 static constexpr const char* PRODUCT_USERSPACE_REBOOT_ANIMATION_FILE = "/product/media/userspace-reboot.zip";
