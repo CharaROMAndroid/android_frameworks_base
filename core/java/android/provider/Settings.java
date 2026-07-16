@@ -18940,6 +18940,17 @@ public final class Settings {
                 "low_power_sticky_auto_disable_enabled";
 
         /**
+         * If 1, battery saver ({@link #LOW_POWER_MODE}) will remain active while the device is
+         * charging, instead of being automatically disabled as soon as a charger is plugged in.
+         * This is independent of {@link #LOW_POWER_MODE_STICKY}, which only controls whether
+         * battery saver is re-activated after the device is unplugged.
+         * @hide
+         */
+        @Readable
+        public static final String LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING =
+                "low_power_keep_enabled_while_charging";
+
+        /**
          * Battery level [1-100] at which low power mode automatically turns on.
          * If 0, it will not automatically turn on. For Q and newer, it will only automatically
          * turn on if the value is greater than 0 and the {@link #AUTOMATIC_POWER_SAVE_MODE}

@@ -44,7 +44,7 @@ constructor(
             icon = Icon.Loaded(resources.getDrawable(iconRes, theme), null, iconRes)
             sideViewIcon = QSTileState.SideViewIcon.None
 
-            if (data.isPluggedIn) {
+            if (data.isPluggedIn && !data.isKeepEnabledWhileChargingSettingOn) {
                 activationState = QSTileState.ActivationState.UNAVAILABLE
                 supportedActions = setOf(QSTileState.UserAction.LONG_CLICK)
                 secondaryLabel = ""

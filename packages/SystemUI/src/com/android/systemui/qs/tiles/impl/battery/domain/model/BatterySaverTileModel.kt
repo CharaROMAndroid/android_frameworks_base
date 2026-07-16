@@ -22,10 +22,17 @@ sealed interface BatterySaverTileModel {
     val isPluggedIn: Boolean
     val isPowerSaving: Boolean
 
+    /**
+     * Whether Settings.Global.LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING is on. When {@code true},
+     * the tile remains interactive while plugged in instead of becoming unavailable.
+     */
+    val isKeepEnabledWhileChargingSettingOn: Boolean
+
     /** For when the device does not support extreme battery saver mode. */
     data class Standard(
         override val isPluggedIn: Boolean,
         override val isPowerSaving: Boolean,
+        override val isKeepEnabledWhileChargingSettingOn: Boolean,
     ) : BatterySaverTileModel
 
     /**
@@ -35,6 +42,7 @@ sealed interface BatterySaverTileModel {
     data class Extreme(
         override val isPluggedIn: Boolean,
         override val isPowerSaving: Boolean,
+        override val isKeepEnabledWhileChargingSettingOn: Boolean,
         val isExtremeSaving: Boolean,
     ) : BatterySaverTileModel
 }
