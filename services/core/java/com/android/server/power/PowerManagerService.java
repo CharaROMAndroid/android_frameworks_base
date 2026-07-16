@@ -4495,7 +4495,10 @@ public final class PowerManagerService extends SystemService
             if (DEBUG) {
                 Slog.d(TAG, "setLowPowerModeInternal " + enabled + " mIsPowered=" + mIsPowered);
             }
-            if (mIsPowered || !mBatterySaverSupported) {
+            final boolean keepEnabledWhileCharging = Settings.Global.getInt(
+                    mContext.getContentResolver(),
+                    Settings.Global.LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING, 0) != 0;
+            if ((mIsPowered && !keepEnabledWhileCharging) || !mBatterySaverSupported) {
                 return false;
             }
 
