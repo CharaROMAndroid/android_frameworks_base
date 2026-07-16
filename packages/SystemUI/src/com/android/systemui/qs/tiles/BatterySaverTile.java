@@ -19,6 +19,7 @@ import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.provider.Settings.Global;
 import android.provider.Settings.Secure;
 import android.service.quicksettings.Tile;
 import android.widget.Switch;
@@ -150,7 +151,9 @@ public class BatterySaverTile extends SecureQSTile<BooleanState> implements
 
     @Override
     protected void handleUpdateState(BooleanState state, Object arg) {
-        state.state = mPluggedIn ? Tile.STATE_UNAVAILABLE
+        final boolean keepEnabledWhileCharging = Global.getInt(mContext.getContentResolver(),
+                Global.LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING, 0) == 1;
+        state.state = (mPluggedIn && !keepEnabledWhileCharging) ? Tile.STATE_UNAVAILABLE
                 : mPowerSave ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE;
         state.icon = maybeLoadResourceIcon(mPowerSave
                 ? R.drawable.qs_battery_saver_icon_on : R.drawable.qs_battery_saver_icon_off);
