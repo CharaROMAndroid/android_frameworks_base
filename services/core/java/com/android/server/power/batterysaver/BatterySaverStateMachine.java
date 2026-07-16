@@ -168,6 +168,14 @@ public class BatterySaverStateMachine {
     @GuardedBy("mLock")
     private boolean mSettingBatterySaverEnabledSticky;
 
+    /**
+     * Previously known value of Settings.Global.LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING.
+     * When {@code true}, battery saver is not automatically disabled when the device is plugged
+     * in.
+     */
+    @GuardedBy("mLock")
+    private boolean mSettingBatterySaverKeepEnabledWhileCharging;
+
     /** Config flag to track if battery saver's sticky behaviour is disabled. */
     private final boolean mBatterySaverStickyBehaviourDisabled;
 
@@ -336,6 +344,9 @@ public class BatterySaverStateMachine {
                     Settings.Global.LOW_POWER_MODE_STICKY),
                     false, mSettingsObserver, UserHandle.USER_SYSTEM);
             cr.registerContentObserver(Settings.Global.getUriFor(
+                    Settings.Global.LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING),
+                    false, mSettingsObserver, UserHandle.USER_SYSTEM);
+            cr.registerContentObserver(Settings.Global.getUriFor(
                     Settings.Global.LOW_POWER_MODE_TRIGGER_LEVEL),
                     false, mSettingsObserver, UserHandle.USER_SYSTEM);
             cr.registerContentObserver(Settings.Global.getUriFor(
@@ -397,6 +408,8 @@ public class BatterySaverStateMachine {
                 Settings.Global.LOW_POWER_MODE, 0) != 0;
         final boolean lowPowerModeEnabledSticky = getGlobalSetting(
                 Settings.Global.LOW_POWER_MODE_STICKY, 0) != 0;
+        final boolean lowPowerModeKeepEnabledWhileCharging = getGlobalSetting(
+                Settings.Global.LOW_POWER_MODE_KEEP_ENABLED_WHILE_CHARGING, 0) != 0;
         final boolean dynamicPowerSavingsBatterySaver = getGlobalSetting(
                 Settings.Global.DYNAMIC_POWER_SAVINGS_ENABLED, 0) != 0;
         final int lowPowerModeTriggerLevel = getGlobalSetting(
@@ -413,6 +426,7 @@ public class BatterySaverStateMachine {
                 Settings.Global.LOW_POWER_MODE_STICKY_AUTO_DISABLE_LEVEL, 90);
 
         setSettingsLocked(lowPowerModeEnabled, lowPowerModeEnabledSticky,
+                lowPowerModeKeepEnabledWhileCharging,
                 lowPowerModeTriggerLevel,
                 isStickyAutoDisableEnabled, stickyAutoDisableThreshold,
                 automaticBatterySaverMode,
@@ -428,6 +442,7 @@ public class BatterySaverStateMachine {
     @GuardedBy("mLock")
     @VisibleForTesting
     void setSettingsLocked(boolean batterySaverEnabled, boolean batterySaverEnabledSticky,
+            boolean batterySaverKeepEnabledWhileCharging,
             int batterySaverTriggerThreshold,
             boolean isStickyAutoDisableEnabled, int stickyAutoDisableThreshold,
             int automaticBatterySaver,
@@ -435,6 +450,7 @@ public class BatterySaverStateMachine {
         if (DEBUG) {
             Slog.d(TAG, "setSettings: enabled=" + batterySaverEnabled
                     + " sticky=" + batterySaverEnabledSticky
+                    + " keepEnabledWhileCharging=" + batterySaverKeepEnabledWhileCharging
                     + " threshold=" + batterySaverTriggerThreshold
                     + " stickyAutoDisableEnabled=" + isStickyAutoDisableEnabled
                     + " stickyAutoDisableThreshold=" + stickyAutoDisableThreshold
@@ -453,6 +469,9 @@ public class BatterySaverStateMachine {
         final boolean enabledChanged = mSettingBatterySaverEnabled != batterySaverEnabled;
         final boolean stickyChanged =
                 mSettingBatterySaverEnabledSticky != batterySaverEnabledSticky;
+        final boolean keepEnabledWhileChargingChanged =
+                mSettingBatterySaverKeepEnabledWhileCharging
+                        != batterySaverKeepEnabledWhileCharging;
         final boolean thresholdChanged
                 = mSettingBatterySaverTriggerThreshold != batterySaverTriggerThreshold;
         final boolean stickyAutoDisableEnabledChanged =
@@ -465,7 +484,8 @@ public class BatterySaverStateMachine {
         final boolean dynamicPowerSavingsBatterySaverChanged =
                 mDynamicPowerSavingsEnableBatterySaver != dynamicPowerSavingsBatterySaver;
 
-        if (!(enabledChanged || stickyChanged || thresholdChanged || automaticModeChanged
+        if (!(enabledChanged || stickyChanged || keepEnabledWhileChargingChanged
+                || thresholdChanged || automaticModeChanged
                 || stickyAutoDisableEnabledChanged || stickyAutoDisableThresholdChanged
                 || dynamicPowerSavingsThresholdChanged || dynamicPowerSavingsBatterySaverChanged)) {
             return;
@@ -473,6 +493,7 @@ public class BatterySaverStateMachine {
 
         mSettingBatterySaverEnabled = batterySaverEnabled;
         mSettingBatterySaverEnabledSticky = batterySaverEnabledSticky;
+        mSettingBatterySaverKeepEnabledWhileCharging = batterySaverKeepEnabledWhileCharging;
         mSettingBatterySaverTriggerThreshold = batterySaverTriggerThreshold;
         mSettingBatterySaverStickyAutoDisableEnabled = isStickyAutoDisableEnabled;
         mSettingBatterySaverStickyAutoDisableThreshold = stickyAutoDisableThreshold;
@@ -603,6 +624,8 @@ public class BatterySaverStateMachine {
                     + " mIsPowered=" + mIsPowered
                     + " mSettingAutomaticBatterySaver=" + mSettingAutomaticBatterySaver
                     + " mSettingBatterySaverEnabledSticky=" + mSettingBatterySaverEnabledSticky
+                    + " mSettingBatterySaverKeepEnabledWhileCharging="
+                    + mSettingBatterySaverKeepEnabledWhileCharging
                     + " mSettingBatterySaverStickyAutoDisableEnabled="
                     + mSettingBatterySaverStickyAutoDisableEnabled);
         }
@@ -640,8 +663,8 @@ public class BatterySaverStateMachine {
 
         switch (mState) {
             case STATE_OFF: {
-                if (!mIsPowered) {
-                    if (manual) {
+                if (manual) {
+                    if (!mIsPowered || mSettingBatterySaverKeepEnabledWhileCharging) {
                         if (!enable) {
                             Slog.e(TAG, "Tried to disable BS when it's already OFF");
                             return;
@@ -650,7 +673,11 @@ public class BatterySaverStateMachine {
                                 BatterySaverController.REASON_MANUAL_ON);
                         hideStickyDisabledNotification();
                         mState = STATE_MANUAL_ON;
-                    } else if (isAutomaticModeActiveLocked() && isInAutomaticLowZoneLocked()) {
+                    }
+                    // else: manual enable while powered and the keep-enabled-while-charging
+                    // setting is off. Stay OFF, same as today's behavior.
+                } else if (!mIsPowered) {
+                    if (isAutomaticModeActiveLocked() && isInAutomaticLowZoneLocked()) {
                         enableBatterySaverLocked(/*enable*/ true, /*manual*/ false,
                                 BatterySaverController.REASON_PERCENTAGE_AUTOMATIC_ON);
                         hideStickyDisabledNotification();
@@ -675,6 +702,12 @@ public class BatterySaverStateMachine {
                             BatterySaverController.REASON_MANUAL_OFF);
                     mState = STATE_OFF;
                 } else if (mIsPowered) {
+                    if (mSettingBatterySaverKeepEnabledWhileCharging) {
+                        // User has opted to keep battery saver on while charging. Stay in
+                        // STATE_MANUAL_ON; battery saver remains active until the user turns it
+                        // off manually or the setting is disabled.
+                        break;
+                    }
                     enableBatterySaverLocked(/*enable*/ false, /*manual*/ false,
                             BatterySaverController.REASON_PLUGGED_IN);
                     if (mSettingBatterySaverEnabledSticky
@@ -689,6 +722,10 @@ public class BatterySaverStateMachine {
 
             case STATE_AUTOMATIC_ON: {
                 if (mIsPowered) {
+                    if (mSettingBatterySaverKeepEnabledWhileCharging) {
+                        // Same as STATE_MANUAL_ON: don't auto-disable while charging.
+                        break;
+                    }
                     enableBatterySaverLocked(/*enable*/ false, /*manual*/ false,
                             BatterySaverController.REASON_PLUGGED_IN);
                     mState = STATE_OFF;
@@ -817,7 +854,7 @@ public class BatterySaverStateMachine {
             }
             return;
         }
-        if (enable && mIsPowered) {
+        if (enable && mIsPowered && !mSettingBatterySaverKeepEnabledWhileCharging) {
             if (DEBUG) Slog.d(TAG, "Can't enable: isPowered");
             return;
         }
@@ -1060,6 +1097,8 @@ public class BatterySaverStateMachine {
             ipw.println(mSettingBatterySaverEnabled);
             ipw.print("mSettingBatterySaverEnabledSticky=");
             ipw.println(mSettingBatterySaverEnabledSticky);
+            ipw.print("mSettingBatterySaverKeepEnabledWhileCharging=");
+            ipw.println(mSettingBatterySaverKeepEnabledWhileCharging);
             ipw.print("mSettingBatterySaverStickyAutoDisableEnabled=");
             ipw.println(mSettingBatterySaverStickyAutoDisableEnabled);
             ipw.print("mSettingBatterySaverStickyAutoDisableThreshold=");

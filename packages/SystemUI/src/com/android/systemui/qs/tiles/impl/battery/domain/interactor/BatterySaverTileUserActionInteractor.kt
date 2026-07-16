@@ -38,7 +38,7 @@ constructor(
         with(input) {
             when (action) {
                 is QSTileUserAction.Click -> {
-                    if (!data.isPluggedIn) {
+                    if (!data.isPluggedIn || data.isKeepEnabledWhileChargingSettingOn) {
                         batteryController.setPowerSaveMode(!data.isPowerSaving, action.expandable)
                     }
                 }
