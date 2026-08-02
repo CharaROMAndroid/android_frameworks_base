@@ -133,10 +133,6 @@ constructor(
                     if (code in OPS_LOCATION && !locationAvailable) {
                         return
                     }
-                    // Hide incoming chip from sense caller package
-                    if (packageName == "co.aospa.sense") {
-                        return
-                    }
                     if (
                         userTracker.userProfiles.any { it.id == UserHandle.getUserId(uid) } ||
                             code in USER_INDEPENDENT_OPS
@@ -390,10 +386,6 @@ constructor(
                 AppOpsManager.OP_RECORD_AUDIO -> PrivacyType.TYPE_MICROPHONE
                 else -> return null
             }
-        // Hide incoming chip from sense caller package
-        if (appOpItem.packageName == "co.aospa.sense") {
-            return null
-        }
         val app = PrivacyApplication(appOpItem.packageName, appOpItem.uid)
         return PrivacyItem(type, app, appOpItem.timeStartedElapsed, appOpItem.isDisabled)
     }
