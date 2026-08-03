@@ -110,8 +110,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
-import com.android.server.biometrics.sensors.face.sense.SenseUtils;
-
 /**
  * System service that arbitrates the modality for BiometricPrompt to use.
  */
