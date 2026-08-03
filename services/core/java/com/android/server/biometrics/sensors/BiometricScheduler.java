@@ -317,10 +317,6 @@ public class BiometricScheduler<T, U> {
             Slog.d(TAG, "No operations, returning to idle");
             return;
         }
-        if (mCurrentUserRetriever == null) {
-            startNextOperationIfIdle();
-            return;
-        }
 
         final int currentUserId = mCurrentUserRetriever.get();
         final int nextUserId = mPendingOperations.getFirst().getTargetUserId();
