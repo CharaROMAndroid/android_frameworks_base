@@ -689,7 +689,7 @@ public class SettingsProvider extends ContentProvider {
                     SettingsState state = mSettingsRegistry.getSettingsLocked(
                             SettingsState.SETTINGS_TYPE_GLOBAL, UserHandle.USER_SYSTEM, Context.DEVICE_ID_DEFAULT);
                     SettingsState.Setting s = state.new Setting(args.name, spoofed, true, null, null);
-                    return packageSettingForQuery(s, normalizedProjection);
+                    return packageSettingForQuery(s, normalizedProjection, null);
                 }
             }
         }
