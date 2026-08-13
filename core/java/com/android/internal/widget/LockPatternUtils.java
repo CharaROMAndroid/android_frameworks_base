@@ -2069,4 +2069,71 @@ public class LockPatternUtils {
             throw e.rethrowFromSystemServer();
         }
     }
+
+    // ========== CharaROM: Duress Credential Methods ==========
+    // Based on GrapheneOS duress password implementation
+    // Reference: https://github.com/GrapheneOS/platform_packages_apps_Settings/commit/0a49b2cb8931c200d0234ccc17cecbedca02ce3c
+
+    /**
+     * Sets duress PIN and password credentials.
+     * When entered at lock screen, these trigger a duress action.
+     */
+    public void setDuressCredentials(LockscreenCredential userCredential,
+            LockscreenCredential duressPin, LockscreenCredential duressPassword) {
+        try {
+            getLockSettings().setDuressCredentials(userCredential, duressPin, duressPassword);
+        } catch (RemoteException re) {
+            re.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Checks if duress credentials are configured.
+     */
+    public boolean hasDuressCredentials(LockscreenCredential userCredential) {
+        try {
+            return getLockSettings().hasDuressCredentials(userCredential);
+        } catch (RemoteException re) {
+            re.rethrowFromSystemServer();
+            return false;
+        }
+    }
+
+    /**
+     * Deletes duress credentials.
+     */
+    public void deleteDuressCredentials(LockscreenCredential userCredential) {
+        try {
+            getLockSettings().deleteDuressCredentials(userCredential);
+        } catch (RemoteException re) {
+            re.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Validates a duress credential meets minimum requirements.
+     * PIN must be at least 4 digits, password must be at least 6 characters.
+     *
+     * @return list of validation errors, empty if valid
+     */
+    public static List<PasswordValidationError> validateDuressCredential(LockscreenCredential credential) {
+        List<PasswordValidationError> errors = new ArrayList<>();
+        if (credential == null || credential.isNone()) {
+            errors.add(new PasswordValidationError(PasswordValidationError.TOO_SHORT, 4));
+            return errors;
+        }
+        int length = credential.size();
+        if (credential.isPin()) {
+            if (length < 4) {
+                errors.add(new PasswordValidationError(PasswordValidationError.TOO_SHORT, 4));
+            }
+        } else if (credential.isPassword()) {
+            if (length < 6) {
+                errors.add(new PasswordValidationError(PasswordValidationError.TOO_SHORT, 6));
+            }
+        }
+        return errors;
+    }
+
+    // ========== End CharaROM Duress Methods ==========
 }

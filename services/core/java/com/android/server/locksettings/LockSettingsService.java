@@ -98,6 +98,9 @@ import android.os.IProgressListener;
 import android.os.ParcelDuration;
 import android.os.Process;
 import android.os.RemoteException;
+import android.os.PowerManager;
+import java.security.MessageDigest;
+import android.util.Base64;
 import android.os.ResultReceiver;
 import android.os.ServiceManager;
 import android.os.ShellCallback;
@@ -243,6 +246,9 @@ public class LockSettingsService extends ILockSettings.Stub {
     private static final String USER_SERIAL_NUMBER_KEY = "serial-number";
 
     private static final String MIGRATED_FRP2 = "migrated_frp2";
+    // CharaROM: Duress credential storage keys
+    private static final String DURESS_PIN_HASH_KEY = "duress_pin_hash";
+    private static final String DURESS_PASSWORD_HASH_KEY = "duress_password_hash";
     private static final String MIGRATED_KEYSTORE_NS = "migrated_keystore_namespace";
     private static final String MIGRATED_SP_FULL = "migrated_all_users_to_sp_and_bound_keys";
     private static final String MIGRATED_WEAVER_DISABLED_ON_UNSECURED_USERS =
@@ -1467,6 +1473,126 @@ public class LockSettingsService extends ILockSettings.Stub {
         return mStorage.getString(key, defaultValue, userId);
     }
 
+    // ========== CharaROM: Duress Credential Methods ==========
+    // Based on GrapheneOS duress password implementation
+    // Reference: https://github.com/GrapheneOS/platform_packages_apps_Settings/commit/0a49b2cb8931c200d0234ccc17cecbedca02ce3c
+
+    private String hashCredential(LockscreenCredential credential) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(credential.getCredential());
+            return Base64.encodeToString(hash, Base64.NO_WRAP);
+        } catch (NoSuchAlgorithmException e) {
+            Slog.e(TAG, "Failed to hash credential", e);
+            return null;
+        }
+    }
+
+    /**
+     * Sets duress PIN and password credentials.
+     * When entered at lock screen, these trigger a duress action (reboot).
+     *
+     * @param userCredential The user's real credential for verification
+     * @param duressPin The duress PIN to set
+     * @param duressPassword The duress password to set
+     */
+    public void setDuressCredentials(LockscreenCredential userCredential,
+            LockscreenCredential duressPin, LockscreenCredential duressPassword) {
+        checkWritePermission();
+        String pinHash = hashCredential(duressPin);
+        String passwordHash = hashCredential(duressPassword);
+        if (pinHash != null) {
+            mStorage.setString(DURESS_PIN_HASH_KEY, pinHash, 0);
+        }
+        if (passwordHash != null) {
+            mStorage.setString(DURESS_PASSWORD_HASH_KEY, passwordHash, 0);
+        }
+        Slog.i(TAG, "Duress credentials set");
+    }
+
+    /**
+     * Checks if duress credentials are configured.
+     *
+     * @param userCredential The user's real credential for verification
+     * @return true if duress credentials exist
+     */
+    public boolean hasDuressCredentials(LockscreenCredential userCredential) {
+        String pinHash = mStorage.getString(DURESS_PIN_HASH_KEY, null, 0);
+        String passwordHash = mStorage.getString(DURESS_PASSWORD_HASH_KEY, null, 0);
+        return pinHash != null || passwordHash != null;
+    }
+
+    /**
+     * Deletes duress credentials.
+     *
+     * @param userCredential The user's real credential for verification
+     */
+    public void deleteDuressCredentials(LockscreenCredential userCredential) {
+        checkWritePermission();
+        mStorage.setString(DURESS_PIN_HASH_KEY, null, 0);
+        mStorage.setString(DURESS_PASSWORD_HASH_KEY, null, 0);
+        Slog.i(TAG, "Duress credentials deleted");
+    }
+
+    /**
+     * Checks if credential matches duress credential and performs duress action if so.
+     *
+     * @param credential The entered credential
+     * @return true if credential was a duress credential (action triggered)
+     */
+    private boolean checkAndHandleDuressCredential(LockscreenCredential credential) {
+        String inputHash = hashCredential(credential);
+        if (inputHash == null) {
+            return false;
+        }
+
+        String storedPinHash = mStorage.getString(DURESS_PIN_HASH_KEY, null, 0);
+        String storedPasswordHash = mStorage.getString(DURESS_PASSWORD_HASH_KEY, null, 0);
+
+        boolean isDuress = false;
+        if (storedPinHash != null && storedPinHash.equals(inputHash)) {
+            isDuress = true;
+        }
+        if (storedPasswordHash != null && storedPasswordHash.equals(inputHash)) {
+            isDuress = true;
+        }
+
+        if (isDuress) {
+            Slog.w(TAG, "Duress credential entered - triggering duress action");
+            performDuressAction();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Performs the duress action.
+     * Currently: immediate reboot
+     * TODO: Add master clear / crypto wipe as an option
+     */
+    private void performDuressAction() {
+        // CharaROM: Currently just reboot. FDR/crypto-wipe code left commented for future use.
+        PowerManager pm = mContext.getSystemService(PowerManager.class);
+        if (pm != null) {
+            Slog.w(TAG, "Performing duress reboot");
+            pm.reboot(null);
+        }
+
+        /*
+        // TODO: Future implementation - master clear / factory reset
+        // Reference: GrapheneOS makes storage permanently inaccessible, deletes eSIMs, powers off
+        //
+        // Intent intent = new Intent(Intent.ACTION_FACTORY_RESET);
+        // intent.setPackage("android");
+        // intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
+        // intent.putExtra(Intent.EXTRA_REASON, "duress");
+        // intent.putExtra(Intent.EXTRA_WIPE_EXTERNAL_STORAGE, true);
+        // mContext.sendBroadcastAsUser(intent, UserHandle.SYSTEM);
+        */
+    }
+
+    // ========== End CharaROM Duress Methods ==========
+
     // Not relevant for new devices, but some legacy devices still have PASSWORD_TYPE_KEY around to
     // distinguish between credential types.
     private int getKeyguardStoredQuality(int userId) {
@@ -2439,6 +2565,13 @@ public class LockSettingsService extends ILockSettings.Stub {
             return VerifyCredentialResponse.OTHER_ERROR;
         }
         Slogf.i(TAG, "Verifying lockscreen credential for user %d", userId);
+
+        // CharaROM: Check for duress credential before normal verification
+        if (checkAndHandleDuressCredential(credential)) {
+            // Duress action triggered, but we still return an error to prevent unlock
+            // The device should be rebooting at this point
+            return VerifyCredentialResponse.OTHER_ERROR;
+        }
 
         final AuthenticationResult authResult;
         VerifyCredentialResponse response;
