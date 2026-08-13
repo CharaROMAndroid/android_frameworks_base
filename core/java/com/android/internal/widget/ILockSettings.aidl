@@ -114,4 +114,9 @@ interface ILockSettings {
     void unlockUserKeyIfUnsecured(int userId);
     boolean writeRepairModeCredential(int userId);
     byte getLockPatternSize(int userId);
+    // CharaROM: Duress credential methods
+    // Reference: https://github.com/GrapheneOS/platform_packages_apps_Settings/commit/0a49b2cb8931c200d0234ccc17cecbedca02ce3c
+    void setDuressCredentials(in LockscreenCredential userCredential, in LockscreenCredential duressPin, in LockscreenCredential duressPassword);
+    boolean hasDuressCredentials(in LockscreenCredential userCredential);
+    void deleteDuressCredentials(in LockscreenCredential userCredential);
 }
