@@ -30,6 +30,7 @@ enum class GlobalActionType(val configKey: String) {
     ASSIST("assist"),
     RESTART("restart"),
     ONTHEGO("onthego"),
+    PANIC("panic"),
     LOGOUT("logout"),
     EMERGENCY("emergency"),
     SCREENSHOT("screenshot"),
