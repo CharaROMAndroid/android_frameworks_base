@@ -957,6 +957,11 @@ final class DeletePackageHelper {
             return true;
         }
 
+        // Allow EmergencyButton app to silently uninstall for panic response.
+        if (callingUid == snapshot.getPackageUid("com.android.emergencybutton", 0, callingUserId)) {
+            return true;
+        }
+
         // Allow caller having MANAGE_PROFILE_AND_DEVICE_OWNERS permission to silently
         // uninstall for device owner provisioning.
         return snapshot.checkUidPermission(MANAGE_PROFILE_AND_DEVICE_OWNERS, callingUid)
