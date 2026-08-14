@@ -874,6 +874,9 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
                         addIfShouldShowAction(tempActions, new getOnTheGoAction());
                     }
                     break;
+                case PANIC:
+                    addIfShouldShowAction(tempActions, new PanicAction());
+                    break;
                 case LOGOUT:
                     if (mLogoutInteractor.isLogoutEnabled().getValue()) {
                         addIfShouldShowAction(tempActions, new LogoutAction());
@@ -1687,6 +1690,31 @@ public class GlobalActionsDialogLite implements DialogInterface.OnDismissListene
             onTheGoIntent.setComponent(cn);
             onTheGoIntent.setAction("start");
             mContext.startService(onTheGoIntent);
+        }
+
+        @Override
+        public boolean showDuringKeyguard() {
+            return true;
+        }
+
+        @Override
+        public boolean showBeforeProvisioning() {
+            return false;
+        }
+    }
+
+    class PanicAction extends SinglePressAction {
+
+        public PanicAction() {
+            super(com.android.systemui.res.R.drawable.ic_panic,
+                    com.android.systemui.res.R.string.global_action_panic);
+        }
+
+        @Override
+        public void onPress() {
+            Intent panicIntent = new Intent("info.guardianproject.panic.action.TRIGGER");
+            panicIntent.setPackage("com.android.triggerresponse");
+            mContext.sendBroadcast(panicIntent);
         }
 
         @Override
