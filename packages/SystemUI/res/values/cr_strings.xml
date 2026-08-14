@@ -86,6 +86,8 @@
     <string name="onthego_service_toggle">Automatically restart service</string>
     <string name="onthego_channel_name">Main</string>
     <string name="global_action_onthego">On-The-Go</string>
+    <string name="global_action_panic">Panic</string>
+    <string name="quick_settings_panic_label">Panic</string>
     <string name="onthego_dialog_title">On-The-Go</string>
     <string name="onthego_opacity_title">Camera opacity</string>
     <string name="onthego_opacity_default">50%</string>
