@@ -25,6 +25,7 @@ import com.android.systemui.qs.tiles.AODTile
 import com.android.systemui.qs.tiles.BlurTile
 import com.android.systemui.qs.tiles.CPUInfoTile
 import com.android.systemui.qs.tiles.CaffeineTile
+import com.android.systemui.qs.tiles.PanicTile
 import com.android.systemui.qs.tiles.CompassTile
 import com.android.systemui.qs.tiles.DataSwitchTile
 import com.android.systemui.qs.tiles.DnsTile
@@ -87,6 +88,12 @@ interface LineageModule {
     @IntoMap
     @StringKey(CaffeineTile.TILE_SPEC)
     fun bindCaffeineTile(caffeineTile: CaffeineTile): QSTileImpl<*>
+
+    /** Inject PanicTile into tileMap in QSModule */
+    @Binds
+    @IntoMap
+    @StringKey(PanicTile.TILE_SPEC)
+    fun bindPanicTile(panicTile: PanicTile): QSTileImpl<*>
 
     /** Inject CompassTile into tileMap in QSModule */
     @Binds
@@ -218,6 +225,7 @@ interface LineageModule {
         const val AMBIENT_DISPLAY_TILE_SPEC = "ambient_display"
         const val AOD_TILE_SPEC = "aod"
         const val CAFFEINE_TILE_SPEC = "caffeine"
+        const val PANIC_TILE_SPEC = "panic"
         const val HEADS_UP_TILE_SPEC = "heads_up"
         const val POWERSHARE_TILE_SPEC = "powershare"
         const val PROFILES_TILE_SPEC = "profiles"
@@ -299,6 +307,21 @@ interface LineageModule {
                     ),
                 instanceId = uiEventLogger.getNewInstanceId(),
                 category = TileCategory.DISPLAY,
+            )
+
+        @Provides
+        @IntoMap
+        @StringKey(PANIC_TILE_SPEC)
+        fun providePanicTileConfig(uiEventLogger: QsEventLogger): QSTileConfig =
+            QSTileConfig(
+                tileSpec = TileSpec.create(PANIC_TILE_SPEC),
+                uiConfig =
+                    QSTileUIConfig.Resource(
+                        iconRes = R.drawable.ic_panic,
+                        labelRes = R.string.quick_settings_panic_label
+                    ),
+                instanceId = uiEventLogger.getNewInstanceId(),
+                category = TileCategory.UTILITIES,
             )
 
         @Provides
