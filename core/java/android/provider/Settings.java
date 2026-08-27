@@ -9483,6 +9483,31 @@ public final class Settings {
                 "always_on_vpn_lockdown_whitelist";
 
         /**
+         * Master toggle for hiding VPN state from apps.
+         * 0 = disabled (default), 1 = enabled
+         *
+         * @hide
+         */
+        public static final String HIDE_VPN_STATE_FROM_APPS = "hide_vpn_state_from_apps";
+
+        /**
+         * Comma-separated list of package names for per-app VPN detection hiding.
+         * Behavior depends on HIDE_VPN_STATE_INVERSE setting.
+         *
+         * @hide
+         */
+        public static final String HIDE_VPN_STATE_APP_LIST = "hide_vpn_state_app_list";
+
+        /**
+         * Invert the VPN hiding app list behavior.
+         * 0 (default) = blacklist: hide VPN from listed apps only
+         * 1 = whitelist: hide VPN from all EXCEPT listed apps
+         *
+         * @hide
+         */
+        public static final String HIDE_VPN_STATE_INVERSE = "hide_vpn_state_inverse";
+
+        /**
          * Whether applications can be installed for this user via the system's
          * {@link Intent#ACTION_INSTALL_PACKAGE} mechanism.
          *
