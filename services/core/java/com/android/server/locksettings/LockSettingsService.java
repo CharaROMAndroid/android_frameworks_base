@@ -1550,10 +1550,10 @@ public class LockSettingsService extends ILockSettings.Stub {
         String storedPasswordHash = mStorage.getString(DURESS_PASSWORD_HASH_KEY, null, 0);
 
         boolean isDuress = false;
-        if (storedPinHash != null && storedPinHash.equals(inputHash)) {
+        if (storedPinHash != null && MessageDigest.isEqual(storedPinHash.getBytes(), inputHash.getBytes())) {
             isDuress = true;
         }
-        if (storedPasswordHash != null && storedPasswordHash.equals(inputHash)) {
+        if (storedPasswordHash != null && MessageDigest.isEqual(storedPasswordHash.getBytes(), inputHash.getBytes())) {
             isDuress = true;
         }
 
