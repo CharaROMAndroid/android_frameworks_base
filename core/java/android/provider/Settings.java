@@ -20929,6 +20929,12 @@ public final class Settings {
         public static final String BLUETOOTH_OFF_TIMEOUT = "bluetooth_off_timeout";
 
         /**
+         * NFC auto-off timeout in milliseconds.
+         * @hide
+         */
+        public static final String NFC_OFF_TIMEOUT = "nfc_off_timeout";
+
+        /**
          * Sensor block per-package
          * @hide
          */
