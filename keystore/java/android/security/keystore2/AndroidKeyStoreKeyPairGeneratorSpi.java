@@ -722,8 +722,35 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
             }
 
             if (needGenerate) {
-                Log.i(TAG, "Generating software key for " + mEntryAlias);
-                
+                // Check if this key actually needs forged attestation.
+                // Plain asymmetric keys without attestation requests are only used for
+                // local crypto (e.g. RSA wrapping of stored secrets). Forging them injects
+                // digest/attestation authorizations the real operation cannot satisfy,
+                // causing KM_ERROR_UNSUPPORTED_DIGEST (-12) on begin().
+                // Forward them to the real keystore instead.
+                // Reference: TrickyStoreOSS commit 05cc7a3 by apedance
+                boolean needsForgedAttestation = 
+                    mSpec.getAttestationChallenge() != null ||
+                    mSpec.isDevicePropertiesAttestationIncluded() ||
+                    mAttestKeyDescriptor != null;
+
+                // Check for ATTEST_KEY purpose
+                if (!needsForgedAttestation && mKeymasterPurposes != null) {
+                    for (int p : mKeymasterPurposes) {
+                        if (p == KeymasterDefs.KM_PURPOSE_ATTEST_KEY) {
+                            needsForgedAttestation = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (!needsForgedAttestation) {
+                    Log.i(TAG, "Forwarding plain asymmetric key to real keystore: " + mEntryAlias);
+                    metadata = iSecurityLevel.generateKey(descriptor, mAttestKeyDescriptor,
+                            constructKeyGenerationArguments(), flags, additionalEntropy);
+                } else {
+                    Log.i(TAG, "Generating forged attestation key for " + mEntryAlias);
+
                 CertificateGenerator.KeyGenParameters params = new CertificateGenerator.KeyGenParameters();
                 params.keySize = mKeySizeBits;
                 params.algorithm = mKeymasterAlgorithm;
@@ -797,9 +824,10 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                 }
                 
                 mKeyStore.updateSubcomponents(descriptor, userCert, chainBytes);
-                
+                }
             } else {
-                 metadata = iSecurityLevel.generateKey(descriptor, mAttestKeyDescriptor,
+                // Not a target app, use real keystore directly
+                metadata = iSecurityLevel.generateKey(descriptor, mAttestKeyDescriptor,
                         constructKeyGenerationArguments(), flags, additionalEntropy);
             }
 
