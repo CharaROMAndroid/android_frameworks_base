@@ -168,6 +168,25 @@ public class AndroidKeyStoreSpi extends KeyStoreSpi {
             throw new NullPointerException("alias == null");
         }
 
+        // Check TrickyStoreService for software keys first
+        // This is the key to avoiding TEE for forged attestation keys
+        int callingUid = android.os.Binder.getCallingUid();
+        TrickyStoreService trickyStore = TrickyStoreService.getInstance();
+        if (trickyStore.hasSoftwareKey(callingUid, alias)) {
+            try {
+                KeyStoreSecurityLevel securityLevel = mKeyStore.getSecurityLevel(
+                        android.hardware.security.keymint.SecurityLevel.TRUSTED_ENVIRONMENT);
+                KeyEntryResponse response = trickyStore.getKeyEntryResponse(
+                        callingUid, alias, securityLevel,
+                        android.hardware.security.keymint.SecurityLevel.TRUSTED_ENVIRONMENT);
+                if (response != null) {
+                    return response;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to get software key response for " + alias, e);
+            }
+        }
+
         KeyDescriptor descriptor = makeKeyDescriptor(alias);
 
         try {

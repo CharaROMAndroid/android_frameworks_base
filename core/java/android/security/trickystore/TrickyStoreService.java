@@ -18,24 +18,42 @@ package android.security.trickystore;
 
 import android.app.ActivityManager;
 import android.app.IActivityManager;
+import android.hardware.security.keymint.KeyParameter;
+import android.hardware.security.keymint.KeyParameterValue;
+import android.hardware.security.keymint.Tag;
 import android.os.RemoteException;
+import android.security.KeyStoreSecurityLevel;
+import android.security.keymaster.KeymasterDefs;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
+import android.system.keystore2.Authorization;
+import android.system.keystore2.KeyDescriptor;
+import android.system.keystore2.KeyEntryResponse;
+import android.system.keystore2.KeyMetadata;
 import android.util.JsonReader;
 import android.util.Log;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateEncodingException;
 import java.security.spec.ECGenParameterSpec;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * @hide
@@ -61,6 +79,141 @@ public class TrickyStoreService {
     public enum Mode {
         AUTO, LEAF_HACK, GENERATE
     }
+
+    /**
+     * Key identifier for software keys (uid + alias).
+     * Based on TrickyStoreOSS SecurityLevelInterceptor.Key
+     * @hide
+     */
+    public static final class SoftwareKey {
+        public final int uid;
+        public final String alias;
+        
+        public SoftwareKey(int uid, String alias) {
+            this.uid = uid;
+            this.alias = alias;
+        }
+        
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof SoftwareKey)) return false;
+            SoftwareKey that = (SoftwareKey) o;
+            return uid == that.uid && Objects.equals(alias, that.alias);
+        }
+        
+        @Override
+        public int hashCode() {
+            return Objects.hash(uid, alias);
+        }
+        
+        @Override
+        public String toString() {
+            return "SoftwareKey{uid=" + uid + ", alias='" + alias + "'}";
+        }
+    }
+
+    /**
+     * Software key entry holding keypair, certificates, and metadata.
+     * Based on TrickyStoreOSS SecurityLevelInterceptor.Info
+     * @hide
+     */
+    public static final class SoftwareKeyEntry {
+        public final KeyPair keyPair;
+        public final List<Certificate> certificateChain;
+        public final int algorithm; // KM_ALGORITHM_EC or KM_ALGORITHM_RSA
+        public final int keySize;
+        public final int[] purposes;
+        public final int[] digests;
+        public final int[] paddings;
+        public final int[] blockModes;
+        public final int[] mgf1Digests;
+        public final long creationTime;
+        public final Long validityStart;
+        public final Long validityEndOrigination;
+        public final Long validityEndConsumption;
+        public final Integer maxUsageCount;
+        public volatile int usageRemaining;
+        
+        public SoftwareKeyEntry(
+                KeyPair keyPair,
+                List<Certificate> certificateChain,
+                int algorithm,
+                int keySize,
+                int[] purposes,
+                int[] digests,
+                int[] paddings,
+                int[] blockModes,
+                int[] mgf1Digests,
+                Long validityStart,
+                Long validityEndOrigination,
+                Long validityEndConsumption,
+                Integer maxUsageCount) {
+            this.keyPair = keyPair;
+            this.certificateChain = certificateChain;
+            this.algorithm = algorithm;
+            this.keySize = keySize;
+            this.purposes = purposes != null ? purposes : new int[0];
+            this.digests = digests != null ? digests : new int[0];
+            this.paddings = paddings != null ? paddings : new int[0];
+            this.blockModes = blockModes != null ? blockModes : new int[0];
+            this.mgf1Digests = mgf1Digests != null ? mgf1Digests : new int[0];
+            this.creationTime = System.currentTimeMillis();
+            this.validityStart = validityStart;
+            this.validityEndOrigination = validityEndOrigination;
+            this.validityEndConsumption = validityEndConsumption;
+            this.maxUsageCount = maxUsageCount;
+            this.usageRemaining = maxUsageCount != null ? maxUsageCount : -1;
+        }
+        
+        public PrivateKey getPrivateKey() {
+            return keyPair.getPrivate();
+        }
+        
+        public PublicKey getPublicKey() {
+            return keyPair.getPublic();
+        }
+        
+        public boolean hasUsageLimit() {
+            return maxUsageCount != null && maxUsageCount > 0;
+        }
+        
+        public boolean consumeUsage() {
+            if (!hasUsageLimit()) return true;
+            synchronized (this) {
+                if (usageRemaining <= 0) return false;
+                usageRemaining--;
+                return true;
+            }
+        }
+    }
+
+    /**
+     * Grant info for software keys.
+     * Based on TrickyStoreOSS Keystore2Interceptor.GrantInfo
+     * @hide
+     */
+    public static final class GrantInfo {
+        public final long grantId;
+        public final SoftwareKey originalKey;
+        public final int granteeUid;
+        
+        public GrantInfo(long grantId, SoftwareKey originalKey, int granteeUid) {
+            this.grantId = grantId;
+            this.originalKey = originalKey;
+            this.granteeUid = granteeUid;
+        }
+    }
+
+    // Software key storage - keys are kept in memory, never touch real keystore
+    // Based on TrickyStoreOSS architecture
+    private final Map<SoftwareKey, SoftwareKeyEntry> mSoftwareKeys = new ConcurrentHashMap<>();
+    private final Map<SoftwareKey, KeyEntryResponse> mCachedResponses = new ConcurrentHashMap<>();
+    private final Map<SoftwareKey, Long> mKeyNspaces = new ConcurrentHashMap<>();
+    private final Map<Long, SoftwareKey> mNspaceToKey = new ConcurrentHashMap<>();
+    private final Map<Long, GrantInfo> mGrants = new ConcurrentHashMap<>();
+    private final AtomicLong mNextGrantId = new AtomicLong(0x7F000000_00000000L); // High bits to avoid collision
+    private final Random mRandom = new Random();
 
     /** @hide */
     public static class CustomPatchLevel {
@@ -505,4 +658,329 @@ public class TrickyStoreService {
         ensureTeeStatus();
         return Boolean.TRUE.equals(mTeeBroken);
     }
+
+    // ============================================================================
+    // Software Key Management - TrickyStoreOSS-style in-memory key storage
+    // Keys are generated in software and never imported into real keystore.
+    // Operations are handled entirely in software via SoftwareOperationBinder.
+    // ============================================================================
+
+    /**
+     * Store a software-generated key. Called instead of importKey for forged keys.
+     * @return the SoftwareKey identifier
+     */
+    public SoftwareKey storeSoftwareKey(int uid, String alias, SoftwareKeyEntry entry) {
+        SoftwareKey key = new SoftwareKey(uid, alias);
+        mSoftwareKeys.put(key, entry);
+        Log.d(TAG, "Stored software key: " + key);
+        return key;
+    }
+
+    /**
+     * Get a software key entry by uid and alias.
+     * @return the entry, or null if not found
+     */
+    public SoftwareKeyEntry getSoftwareKey(int uid, String alias) {
+        return mSoftwareKeys.get(new SoftwareKey(uid, alias));
+    }
+
+    /**
+     * Check if a software key exists.
+     */
+    public boolean hasSoftwareKey(int uid, String alias) {
+        return mSoftwareKeys.containsKey(new SoftwareKey(uid, alias));
+    }
+
+    /**
+     * Delete a software key.
+     * @return true if the key existed and was deleted
+     */
+    public boolean deleteSoftwareKey(int uid, String alias) {
+        SoftwareKey key = new SoftwareKey(uid, alias);
+        SoftwareKeyEntry removed = mSoftwareKeys.remove(key);
+        if (removed != null) {
+            // Also remove any grants for this key
+            mGrants.values().removeIf(grant -> grant.originalKey.equals(key));
+            Log.d(TAG, "Deleted software key: " + key);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * List all software key aliases for a given uid.
+     */
+    public List<String> listSoftwareKeyAliases(int uid) {
+        List<String> aliases = new ArrayList<>();
+        for (SoftwareKey key : mSoftwareKeys.keySet()) {
+            if (key.uid == uid) {
+                aliases.add(key.alias);
+            }
+        }
+        return aliases;
+    }
+
+    /**
+     * Grant access to a software key.
+     * @return the grant ID
+     */
+    public long grantSoftwareKey(int ownerUid, String alias, int granteeUid) {
+        SoftwareKey originalKey = new SoftwareKey(ownerUid, alias);
+        if (!mSoftwareKeys.containsKey(originalKey)) {
+            throw new IllegalArgumentException("Software key not found: " + originalKey);
+        }
+        long grantId = mNextGrantId.getAndIncrement();
+        mGrants.put(grantId, new GrantInfo(grantId, originalKey, granteeUid));
+        Log.d(TAG, "Granted software key access: grantId=" + grantId + 
+              ", key=" + originalKey + ", grantee=" + granteeUid);
+        return grantId;
+    }
+
+    /**
+     * Revoke a grant.
+     */
+    public void ungrantSoftwareKey(long grantId) {
+        GrantInfo removed = mGrants.remove(grantId);
+        if (removed != null) {
+            Log.d(TAG, "Revoked software key grant: " + grantId);
+        }
+    }
+
+    /**
+     * Get a software key entry via grant.
+     * @return the entry, or null if grant not found or invalid
+     */
+    public SoftwareKeyEntry getSoftwareKeyByGrant(long grantId, int callerUid) {
+        GrantInfo grant = mGrants.get(grantId);
+        if (grant == null) {
+            return null;
+        }
+        if (grant.granteeUid != callerUid) {
+            Log.w(TAG, "Grant " + grantId + " not valid for uid " + callerUid);
+            return null;
+        }
+        return mSoftwareKeys.get(grant.originalKey);
+    }
+
+    /**
+     * Get the original key for a grant (for certificate chain updates, etc).
+     */
+    public SoftwareKey getGrantOriginalKey(long grantId) {
+        GrantInfo grant = mGrants.get(grantId);
+        return grant != null ? grant.originalKey : null;
+    }
+
+    /**
+     * Update the certificate chain for a software key.
+     */
+    public void updateSoftwareKeyCertificates(int uid, String alias, List<Certificate> newChain) {
+        SoftwareKey key = new SoftwareKey(uid, alias);
+        SoftwareKeyEntry existing = mSoftwareKeys.get(key);
+        if (existing == null) {
+            Log.w(TAG, "Cannot update certificates - key not found: " + key);
+            return;
+        }
+        // Create new entry with updated chain (entry is effectively immutable otherwise)
+        SoftwareKeyEntry updated = new SoftwareKeyEntry(
+            existing.keyPair,
+            newChain,
+            existing.algorithm,
+            existing.keySize,
+            existing.purposes,
+            existing.digests,
+            existing.paddings,
+            existing.blockModes,
+            existing.mgf1Digests,
+            existing.validityStart,
+            existing.validityEndOrigination,
+            existing.validityEndConsumption,
+            existing.maxUsageCount
+        );
+        mSoftwareKeys.put(key, updated);
+        Log.d(TAG, "Updated software key certificates: " + key);
+    }
+
+    /**
+     * Clear all software keys. Used during testing or reset.
+     */
+    public void clearAllSoftwareKeys() {
+        mSoftwareKeys.clear();
+        mCachedResponses.clear();
+        mKeyNspaces.clear();
+        mNspaceToKey.clear();
+        mGrants.clear();
+        Log.i(TAG, "Cleared all software keys and grants");
+    }
+
+    /**
+     * Get or build a KeyEntryResponse for a software key.
+     * This is what AndroidKeyStoreSpi.getKeyMetadata returns for software keys.
+     */
+    public KeyEntryResponse getKeyEntryResponse(int uid, String alias, 
+            KeyStoreSecurityLevel securityLevel, int securityLevelValue) {
+        SoftwareKey key = new SoftwareKey(uid, alias);
+        
+        // Check cache first
+        KeyEntryResponse cached = mCachedResponses.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        
+        SoftwareKeyEntry entry = mSoftwareKeys.get(key);
+        if (entry == null) {
+            return null;
+        }
+        
+        KeyEntryResponse response = buildKeyEntryResponse(key, entry, securityLevel, securityLevelValue);
+        mCachedResponses.put(key, response);
+        return response;
+    }
+    
+    /**
+     * Build a synthetic KeyEntryResponse for a software key.
+     * Based on TrickyStoreOSS SecurityLevelInterceptor.buildResponse
+     */
+    private KeyEntryResponse buildKeyEntryResponse(SoftwareKey key, SoftwareKeyEntry entry,
+            KeyStoreSecurityLevel securityLevel, int securityLevelValue) {
+        
+        KeyEntryResponse response = new KeyEntryResponse();
+        KeyMetadata metadata = new KeyMetadata();
+        
+        // Set security level
+        metadata.keySecurityLevel = securityLevelValue;
+        metadata.modificationTimeMs = entry.creationTime / 1000;
+        
+        // Build certificate chain bytes
+        List<Certificate> chain = entry.certificateChain;
+        if (chain != null && !chain.isEmpty()) {
+            try {
+                metadata.certificate = chain.get(0).getEncoded();
+                if (chain.size() > 1) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    for (int i = 1; i < chain.size(); i++) {
+                        baos.write(chain.get(i).getEncoded());
+                    }
+                    metadata.certificateChain = baos.toByteArray();
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to encode certificate chain", e);
+            }
+        }
+        
+        // Build key descriptor with unique nspace
+        KeyDescriptor descriptor = new KeyDescriptor();
+        descriptor.domain = 4; // KEY_ID domain
+        
+        // Get or create nspace for this key
+        Long nspace = mKeyNspaces.get(key);
+        if (nspace == null) {
+            nspace = mRandom.nextLong();
+            mKeyNspaces.put(key, nspace);
+            mNspaceToKey.put(nspace, key);
+        }
+        descriptor.nspace = nspace;
+        descriptor.alias = null;
+        metadata.key = descriptor;
+        
+        // Build authorizations
+        List<Authorization> authorizations = new ArrayList<>();
+        
+        // Algorithm
+        addAuth(authorizations, Tag.ALGORITHM, KeyParameterValue.algorithm(entry.algorithm), securityLevelValue);
+        
+        // Purposes
+        for (int purpose : entry.purposes) {
+            addAuth(authorizations, Tag.PURPOSE, KeyParameterValue.keyPurpose(purpose), securityLevelValue);
+        }
+        
+        // Digests
+        for (int digest : entry.digests) {
+            addAuth(authorizations, Tag.DIGEST, KeyParameterValue.digest(digest), securityLevelValue);
+        }
+        
+        // Paddings
+        for (int padding : entry.paddings) {
+            addAuth(authorizations, Tag.PADDING, KeyParameterValue.paddingMode(padding), securityLevelValue);
+        }
+        
+        // Block modes
+        for (int blockMode : entry.blockModes) {
+            addAuth(authorizations, Tag.BLOCK_MODE, KeyParameterValue.blockMode(blockMode), securityLevelValue);
+        }
+        
+        // MGF digests
+        for (int mgfDigest : entry.mgf1Digests) {
+            addAuth(authorizations, Tag.RSA_OAEP_MGF_DIGEST, KeyParameterValue.digest(mgfDigest), securityLevelValue);
+        }
+        
+        // Key size
+        addAuth(authorizations, Tag.KEY_SIZE, KeyParameterValue.integer(entry.keySize), securityLevelValue);
+        
+        // No auth required (software keys don't need auth)
+        addAuth(authorizations, Tag.NO_AUTH_REQUIRED, KeyParameterValue.boolValue(true), securityLevelValue);
+        
+        // Origin - claim TEE generated
+        addAuth(authorizations, Tag.ORIGIN, KeyParameterValue.origin(0), securityLevelValue); // 0 = GENERATED
+        
+        // OS/patch levels from AttestationUtils
+        int osVersion = AttestationUtils.getOsVersion();
+        int patchLevel = AttestationUtils.getPatchLevel(false);
+        
+        addAuth(authorizations, Tag.OS_VERSION, KeyParameterValue.integer(osVersion), securityLevelValue);
+        addAuth(authorizations, Tag.OS_PATCHLEVEL, KeyParameterValue.integer(patchLevel), securityLevelValue);
+        
+        // Creation datetime (software level)
+        addAuth(authorizations, Tag.CREATION_DATETIME, KeyParameterValue.dateTime(entry.creationTime), 0);
+        
+        // Validity dates (software level)
+        if (entry.validityStart != null) {
+            addAuth(authorizations, Tag.ACTIVE_DATETIME, KeyParameterValue.dateTime(entry.validityStart), 0);
+        }
+        if (entry.validityEndOrigination != null) {
+            addAuth(authorizations, Tag.ORIGINATION_EXPIRE_DATETIME, 
+                    KeyParameterValue.dateTime(entry.validityEndOrigination), 0);
+        }
+        if (entry.validityEndConsumption != null) {
+            addAuth(authorizations, Tag.USAGE_EXPIRE_DATETIME,
+                    KeyParameterValue.dateTime(entry.validityEndConsumption), 0);
+        }
+        
+        // Usage count limit (software level)
+        if (entry.maxUsageCount != null && entry.maxUsageCount > 0) {
+            addAuth(authorizations, Tag.USAGE_COUNT_LIMIT, 
+                    KeyParameterValue.integer(entry.maxUsageCount), 0);
+        }
+        
+        metadata.authorizations = authorizations.toArray(new Authorization[0]);
+        
+        response.metadata = metadata;
+        response.iSecurityLevel = securityLevel.asBinder();
+        
+        return response;
+    }
+    
+    private void addAuth(List<Authorization> list, int tag, KeyParameterValue value, int secLevel) {
+        Authorization auth = new Authorization();
+        KeyParameter param = new KeyParameter();
+        param.tag = tag;
+        param.value = value;
+        auth.keyParameter = param;
+        auth.securityLevel = secLevel;
+        list.add(auth);
+    }
+    
+    /**
+     * Resolve a software key from a nspace (for grants/lookups).
+     */
+    public SoftwareKey getSoftwareKeyByNspace(long nspace) {
+        return mNspaceToKey.get(nspace);
+    }
+    
+    /**
+     * Get the nspace for a software key.
+     */
+    public Long getNspaceForSoftwareKey(int uid, String alias) {
+        return mKeyNspaces.get(new SoftwareKey(uid, alias));
+    }
 }
+
