@@ -76,36 +76,6 @@ public class KeyStoreSecurityLevel {
      */
     public KeyStoreOperation createOperation(@NonNull KeyDescriptor keyDescriptor,
             Collection<KeyParameter> args) throws KeyStoreException {
-        
-        // Check for software keys in TrickyStoreService
-        // Software keys never touch the TEE - all operations are handled in software
-        android.security.trickystore.TrickyStoreService trickyStore = 
-                android.security.trickystore.TrickyStoreService.getInstance();
-        int callingUid = android.os.Binder.getCallingUid();
-        String alias = keyDescriptor.alias;
-        
-        // If alias is null, try to resolve from nspace (for key ID lookups)
-        if (alias == null && keyDescriptor.domain == android.system.keystore2.Domain.KEY_ID) {
-            android.security.trickystore.TrickyStoreService.SoftwareKey softwareKey = 
-                    trickyStore.getSoftwareKeyByNspace(keyDescriptor.nspace);
-            if (softwareKey != null) {
-                alias = softwareKey.alias;
-                callingUid = softwareKey.uid;
-            }
-        }
-        
-        if (alias != null && trickyStore.hasSoftwareKey(callingUid, alias)) {
-            try {
-                // Use TRUSTED_ENVIRONMENT as the spoofed security level
-                android.security.trickystore.SoftwareKeyStoreSecurityLevel softwareLevel = 
-                        new android.security.trickystore.SoftwareKeyStoreSecurityLevel(
-                                this, android.hardware.security.keymint.SecurityLevel.TRUSTED_ENVIRONMENT);
-                return softwareLevel.createOperation(callingUid, alias, args);
-            } catch (KeyStoreException e) {
-                throw e;
-            }
-        }
-        
         StrictMode.noteDiskWrite();
         while (true) {
             try {
