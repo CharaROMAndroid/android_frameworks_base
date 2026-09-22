@@ -742,26 +742,6 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                     for (int d : mKeymasterDigests) params.digest.add(d);
                 }
 
-                Log.d(TAG, "RSA OAEP check: alg=" + mKeymasterAlgorithm + " KM_RSA=" + KeymasterDefs.KM_ALGORITHM_RSA + " paddings=" + java.util.Arrays.toString(mKeymasterEncryptionPaddings));
-                // Populate RSA OAEP MGF digest for KeyMint 3+ compatibility
-                if (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_RSA && 
-                    mKeymasterEncryptionPaddings != null) {
-                    for (int padding : mKeymasterEncryptionPaddings) {
-                        if (padding == KeymasterDefs.KM_PAD_RSA_OAEP) {
-                            // Use digests as MGF1 digests per KeyMint spec
-                            if (mKeymasterDigests != null) {
-                                for (int d : mKeymasterDigests) {
-                                    params.rsaOaepMgfDigest.add(d);
-                                }
-                            } else {
-                                // Default to SHA-1 if no digests specified
-                                params.rsaOaepMgfDigest.add(KeymasterDefs.KM_DIGEST_SHA1);
-                            }
-                            break;
-                        }
-                    }
-                }
-
                 if (mSpec.isDevicePropertiesAttestationIncluded()) {
                     try {
                         final String brand = isPropertyEmptyOrUnknown(Build.BRAND_FOR_ATTESTATION)
@@ -797,53 +777,26 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
                     
                 if (chain == null) throw new ProviderException("Failed to generate software certificate chain");
 
-                // Store the key in TrickyStoreService instead of importing to real keystore
-                // This is the key TrickyStoreOSS insight: forged keys NEVER touch the TEE
-                TrickyStoreService trickyStore = TrickyStoreService.getInstance();
+                byte[] keyBytes = kp.getPrivate().getEncoded();
                 
-                // Build SoftwareKeyEntry
-                int[] purposes = mKeymasterPurposes != null ? mKeymasterPurposes : new int[0];
-                int[] digests = mKeymasterDigests != null ? mKeymasterDigests : new int[0];
-                int[] paddings = mergePaddings(mKeymasterSignaturePaddings, mKeymasterEncryptionPaddings);
-                int[] blockModes = mKeymasterBlockModes != null ? mKeymasterBlockModes : new int[0];
-                int[] mgf1Digests = new int[0];
-                if (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_RSA &&
-                    mKeymasterEncryptionPaddings != null) {
-                    for (int p : mKeymasterEncryptionPaddings) {
-                        if (p == KeymasterDefs.KM_PAD_RSA_OAEP) {
-                            mgf1Digests = digests.length > 0 ? digests : new int[] { KeymasterDefs.KM_DIGEST_SHA1 };
-                            break;
+                metadata = iSecurityLevel.importKey(descriptor, null,
+                         constructKeyImportArguments(), flags, keyBytes);
+                         
+                byte[] userCert = null;
+                byte[] chainBytes = null;
+                
+                if (chain != null && !chain.isEmpty()) {
+                    try {
+                        userCert = chain.get(0).getEncoded();
+                        if (chain.size() > 1) {
+                             chainBytes = encodeCertificateChain(chain.subList(1, chain.size()));
                         }
+                    } catch (Exception e) {
+                        throw new ProviderException("Failed to encode certificate chain", e);
                     }
                 }
                 
-                Long validityStart = mSpec.getKeyValidityStart() != null ? 
-                        mSpec.getKeyValidityStart().getTime() : null;
-                Long validityEndOrigination = mSpec.getKeyValidityForOriginationEnd() != null ?
-                        mSpec.getKeyValidityForOriginationEnd().getTime() : null;
-                Long validityEndConsumption = mSpec.getKeyValidityForConsumptionEnd() != null ?
-                        mSpec.getKeyValidityForConsumptionEnd().getTime() : null;
-                Integer maxUsageCount = mSpec.getMaxUsageCount() > 0 ? mSpec.getMaxUsageCount() : null;
-                
-                TrickyStoreService.SoftwareKeyEntry entry = new TrickyStoreService.SoftwareKeyEntry(
-                        kp, chain, mKeymasterAlgorithm, mKeySizeBits,
-                        purposes, digests, paddings, blockModes, mgf1Digests,
-                        validityStart, validityEndOrigination, validityEndConsumption, maxUsageCount);
-                
-                trickyStore.storeSoftwareKey(callingUid, mEntryAlias, entry);
-                
-                // Get the synthetic KeyEntryResponse
-                android.system.keystore2.KeyEntryResponse response = trickyStore.getKeyEntryResponse(
-                        callingUid, mEntryAlias, iSecurityLevel, securityLevel);
-                
-                if (response == null || response.metadata == null) {
-                    throw new ProviderException("Failed to build software key response");
-                }
-                
-                metadata = response.metadata;
-                
-                Log.i(TAG, "Stored software key in TrickyStoreService: " + mEntryAlias + 
-                        " (uid=" + callingUid + ", chain size=" + chain.size() + ")");
+                mKeyStore.updateSubcomponents(descriptor, userCert, chainBytes);
                 
             } else {
                  metadata = iSecurityLevel.generateKey(descriptor, mAttestKeyDescriptor,
@@ -897,23 +850,6 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
             }
         }
         return baos.toByteArray();
-    }
-
-    private int[] mergePaddings(int[] signaturePaddings, int[] encryptionPaddings) {
-        if (signaturePaddings == null && encryptionPaddings == null) {
-            return new int[0];
-        }
-        if (signaturePaddings == null) return encryptionPaddings;
-        if (encryptionPaddings == null) return signaturePaddings;
-        
-        // Merge and dedupe
-        java.util.Set<Integer> set = new java.util.HashSet<>();
-        for (int p : signaturePaddings) set.add(p);
-        for (int p : encryptionPaddings) set.add(p);
-        int[] result = new int[set.size()];
-        int i = 0;
-        for (Integer p : set) result[i++] = p;
-        return result;
     }
 
     @RequiresPermission(value = android.Manifest.permission.READ_PRIVILEGED_PHONE_STATE,
