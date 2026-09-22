@@ -1,8 +1,8 @@
 {
     "dependencies": {
-        "csv-parse": "^5.3.3",
+        "csv-parse": "^7.0.2",
         "high5": "^1.0.0",
-        "jsdom": "^20.0.3"
+        "jsdom": "^21.1.1"
     },
     "devDependencies": {
         "@types/jsdom": "^20.0.1",
