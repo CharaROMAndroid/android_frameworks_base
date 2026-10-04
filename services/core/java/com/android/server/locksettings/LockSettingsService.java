@@ -111,6 +111,7 @@ import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.UserHandle;
 import android.os.UserManager;
+import android.os.RecoverySystem;
 import android.os.storage.IStorageManager;
 import android.os.storage.StorageManager;
 import android.provider.Settings;
@@ -1517,7 +1518,7 @@ public class LockSettingsService extends ILockSettings.Stub {
 
     /**
      * Sets duress PIN and password credentials.
-     * When entered at lock screen, these trigger a duress action (reboot).
+     * When entered at lock screen, these trigger a duress action (cryptoshred).
      *
      * @param userCredential The user's real credential for verification
      * @param duressPin The duress PIN to set
@@ -1593,29 +1594,68 @@ public class LockSettingsService extends ILockSettings.Stub {
     }
 
     /**
-     * Performs the duress action.
-     * Currently: immediate reboot
-     * TODO: Add master clear / crypto wipe as an option
+     * Performs the duress action: cryptoshred every user, then factory reset.
+     *
+     * Destroys all synthetic password protectors (LSKF, weaver slot, tokens, escrow),
+     * evicts and destroys CE keys, and drops keystore keys for every user, so the data is
+     * unrecoverable even if the wipe itself never completes. Then reboots into recovery
+     * for an unattended wipe. Each step is isolated so one failure can't skip the rest.
      */
     private void performDuressAction() {
-        // CharaROM: Currently just reboot. FDR/crypto-wipe code left commented for future use.
-        PowerManager pm = mContext.getSystemService(PowerManager.class);
-        if (pm != null) {
-            Slog.w(TAG, "Performing duress reboot");
-            pm.reboot(null);
-        }
+        Slog.w(TAG, "Duress: starting cryptoshred");
+        new Thread(() -> {
+            final List<UserInfo> users = mUserManager.getAliveUsers();
+            for (UserInfo user : users) {
+                cryptoshredUser(user.id);
+            }
+            try {
+                RecoverySystem.rebootWipeUserData(mContext, false, "duress", true, true);
+            } catch (Throwable t) {
+                Slog.wtf(TAG, "Duress: wipe failed, falling back to reboot", t);
+            }
+            // Only reached if the wipe call returned or threw. Keys are already gone.
+            PowerManager pm = mContext.getSystemService(PowerManager.class);
+            if (pm != null) {
+                pm.reboot("duress");
+            }
+        }, "DuressWipe").start();
+    }
 
-        /*
-        // TODO: Future implementation - master clear / factory reset
-        // Reference: GrapheneOS makes storage permanently inaccessible, deletes eSIMs, powers off
-        //
-        // Intent intent = new Intent(Intent.ACTION_FACTORY_RESET);
-        // intent.setPackage("android");
-        // intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
-        // intent.putExtra(Intent.EXTRA_REASON, "duress");
-        // intent.putExtra(Intent.EXTRA_WIPE_EXTERNAL_STORAGE, true);
-        // mContext.sendBroadcastAsUser(intent, UserHandle.SYSTEM);
-        */
+    private void cryptoshredUser(int userId) {
+        synchronized (mSpManager) {
+            try {
+                final long protectorId = getCurrentLskfBasedProtectorId(userId);
+                // Also destroys the weaver slot, which alone makes the SP unrecoverable.
+                mSpManager.destroyLskfBasedProtector(protectorId, userId);
+            } catch (Throwable t) {
+                Slog.wtf(TAG, "Duress: LSKF protector destroy failed for user " + userId, t);
+            }
+            try {
+                mSpManager.destroyAllWeakTokenBasedProtectors(userId);
+            } catch (Throwable t) {
+                Slog.wtf(TAG, "Duress: token protector destroy failed for user " + userId, t);
+            }
+            try {
+                mSpManager.destroyEscrowData(userId);
+            } catch (Throwable t) {
+                Slog.wtf(TAG, "Duress: escrow destroy failed for user " + userId, t);
+            }
+        }
+        try {
+            mStorageManager.lockCeStorage(userId);
+        } catch (Throwable t) {
+            Slog.wtf(TAG, "Duress: lockCeStorage failed for user " + userId, t);
+        }
+        try {
+            mStorageManagerInternal.destroyUserStorageKeys(userId);
+        } catch (Throwable t) {
+            Slog.wtf(TAG, "Duress: destroyUserStorageKeys failed for user " + userId, t);
+        }
+        try {
+            AndroidKeyStoreMaintenance.onUserRemoved(userId);
+        } catch (Throwable t) {
+            Slog.wtf(TAG, "Duress: keystore wipe failed for user " + userId, t);
+        }
     }
 
     // ========== End CharaROM Duress Methods ==========
