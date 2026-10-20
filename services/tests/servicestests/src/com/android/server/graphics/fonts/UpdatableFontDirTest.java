@@ -121,7 +121,7 @@ public final class UpdatableFontDirTest {
 
     /** A fake FsverityUtil to keep fake verity bit in memory. */
     private static class FakeFsverityUtil implements UpdatableFontDir.FsverityUtil {
-        private final Set<String> mHasFsverityPaths = new HashSet<>();
+        final Set<String> mHasFsverityPaths = new HashSet<>();
 
         public void remove(String name) {
             mHasFsverityPaths.remove(name);
@@ -604,6 +604,104 @@ public final class UpdatableFontDirTest {
         assertThat(mParser.getRevision(dir.getPostScriptMap().get("foo"))).isEqualTo(1);
         assertThat(dir.getPostScriptMap()).containsKey("bar");
         assertThat(mParser.getRevision(dir.getPostScriptMap().get("bar"))).isEqualTo(2);
+    }
+
+    @Test
+    public void installFontFile_invalidSignature_neverParses() throws Exception {
+        UpdatableFontDir dir = new UpdatableFontDir(
+                mUpdatableFontFilesDir, new FakeFontFileParser() {
+                    @Override
+                    public String buildFontFileName(File file) {
+                        throw new AssertionError("Unauthenticated font reached native parser");
+                    }
+                }, mFakeFsverityUtil, mConfigFile, mCurrentTimeSupplier, mConfigSupplier);
+        dir.loadFontFileMap();
+        try {
+            dir.update(Collections.singletonList(
+                    newFontUpdateRequest("not even a font", "Invalid signature")));
+            fail("Expect SystemFontException");
+        } catch (FontManagerService.SystemFontException e) {
+            assertThat(e.getErrorCode())
+                    .isEqualTo(FontManager.RESULT_ERROR_VERIFICATION_FAILURE);
+        }
+        assertThat(dir.getPostScriptMap()).isEmpty();
+        assertThat(mUpdatableFontFilesDir.list()).hasLength(0);
+    }
+
+    @Test
+    public void installFontFile_unsignedFailsWithoutSanitizer() throws Exception {
+        UpdatableFontDir dir = new UpdatableFontDir(
+                mUpdatableFontFilesDir, new FakeFontFileParser() {
+                    @Override
+                    public String buildFontFileName(File file) {
+                        throw new AssertionError("Raw font reached metadata parser");
+                    }
+                }, mFakeFsverityUtil, mConfigFile, mCurrentTimeSupplier, mConfigSupplier);
+        dir.loadFontFileMap();
+        try {
+            dir.update(Collections.singletonList(newFontUpdateRequest("raw upload", "")));
+            fail("Expected unavailable sanitizer to fail closed");
+        } catch (FontManagerService.SystemFontException e) {
+            assertThat(e.getErrorCode())
+                    .isEqualTo(FontManager.RESULT_ERROR_VERIFICATION_FAILURE);
+        }
+        assertThat(mUpdatableFontFilesDir.list()).hasLength(0);
+    }
+
+    @Test
+    public void installFontFile_unsignedUsesRewrittenOutput() throws Exception {
+        byte[] receipt = new byte[40];
+        byte[] magic = new byte[] {'O', 'T', 'S', 'F', 'O', 'N', 'T', 1};
+        System.arraycopy(magic, 0, receipt, 0, magic.length);
+        FakeFsverityUtil sanitizer = new FakeFsverityUtil() {
+            @Override
+            public byte[] sanitize(File file) throws IOException {
+                try (FileOutputStream out = new FileOutputStream(file)) {
+                    out.write("sanitized.ttf,1,sanitized".getBytes(StandardCharsets.UTF_8));
+                }
+                setUpFsverity(file.getAbsolutePath());
+                return receipt;
+            }
+
+            @Override
+            public boolean isFromTrustedProvider(String path, byte[] signature) {
+                return mHasFsverityPaths.contains(path) && Arrays.equals(receipt, signature);
+            }
+        };
+        UpdatableFontDir dir = new UpdatableFontDir(
+                mUpdatableFontFilesDir, mParser, sanitizer,
+                mConfigFile, mCurrentTimeSupplier, mConfigSupplier);
+        dir.loadFontFileMap();
+        dir.update(Collections.singletonList(newFontUpdateRequest("raw upload", "")));
+        assertThat(dir.getPostScriptMap()).containsKey("sanitized");
+        assertThat(dir.getPostScriptMap()).doesNotContainKey("raw upload");
+
+        // Persisted output can reload under its authenticated receipt without sanitizing again.
+        UpdatableFontDir reloaded = new UpdatableFontDir(
+                mUpdatableFontFilesDir, mParser, sanitizer,
+                mConfigFile, mCurrentTimeSupplier, mConfigSupplier);
+        reloaded.loadFontFileMap();
+        assertThat(reloaded.getPostScriptMap()).containsKey("sanitized");
+    }
+
+    @Test
+    public void installFontFile_unsafeFileName() throws Exception {
+        UpdatableFontDir dir = new UpdatableFontDir(
+                mUpdatableFontFilesDir, new FakeFontFileParser() {
+                    @Override
+                    public String buildFontFileName(File file) {
+                        return "../escape.ttf";
+                    }
+                }, mFakeFsverityUtil, mConfigFile, mCurrentTimeSupplier, mConfigSupplier);
+        dir.loadFontFileMap();
+        try {
+            dir.update(Collections.singletonList(
+                    newFontUpdateRequest("foo.ttf,1,foo", GOOD_SIGNATURE)));
+            fail("Expect SystemFontException");
+        } catch (FontManagerService.SystemFontException e) {
+            assertThat(e.getErrorCode()).isEqualTo(FontManager.RESULT_ERROR_INVALID_FONT_NAME);
+        }
+        assertThat(mUpdatableFontFilesDir.list()).hasLength(0);
     }
 
     @Test

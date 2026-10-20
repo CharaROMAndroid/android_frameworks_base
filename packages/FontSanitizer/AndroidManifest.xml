@@ -1,0 +1,10 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.fontsanitizer">
+    <application android:label="Font sanitizer" android:allowBackup="false"
+        android:usesCleartextTraffic="false" android:extractNativeLibs="false">
+        <service android:name=".FontSanitizerService" android:exported="true"
+            android:isolatedProcess="true" android:directBootAware="true"
+            android:process=":sanitizer"
+            android:permission="android.permission.UPDATE_FONTS" />
+    </application>
+</manifest>

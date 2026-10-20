@@ -16,7 +16,6 @@
 
 package com.android.server.graphics.fonts;
 
-import static com.android.server.graphics.fonts.FontManagerService.axFontFeatureSupport;
 import static com.android.server.graphics.fonts.FontManagerService.SystemFontException;
 
 import android.annotation.NonNull;
@@ -29,6 +28,8 @@ import android.os.FileUtils;
 import android.os.LocaleList;
 import android.system.ErrnoException;
 import android.system.Os;
+import android.system.OsConstants;
+import android.system.StructStat;
 import android.text.FontConfig;
 import android.util.ArrayMap;
 import android.util.AtomicFile;
@@ -68,6 +69,8 @@ final class UpdatableFontDir {
     private static final String TAG = "UpdatableFontDir";
     private static final String RANDOM_DIR_PREFIX = "~~";
 
+    private static final long MAX_FONT_BYTES = 32L * 1024 * 1024;
+
     private static final String FONT_SIGNATURE_FILE = "font.fsv_sig";
     private static final String EMOJI_LANG = "und-Zsye";
     private static final String EMOJI_DEFAULT_POSTSCRIPT_NAME = "NotoColorEmoji";
@@ -92,6 +95,11 @@ final class UpdatableFontDir {
         void setUpFsverity(String path) throws IOException;
 
         boolean rename(File src, File dest);
+
+        /** Rewrite unsigned input in isolation, seal it, and return a local provenance receipt. */
+        default byte[] sanitize(File file) throws IOException {
+            throw new IOException("Isolated font sanitizer not configured");
+        }
     }
 
     /** Data class to hold font file path and revision. */
@@ -578,6 +586,22 @@ final class UpdatableFontDir {
      */
     private void installFontFile(FileDescriptor fd, byte[] pkcs7Signature)
             throws SystemFontException {
+        // Local receipts authenticate files already sanitized by this service, never raw uploads.
+        if (pkcs7Signature == null || FontSanitizationReceipt.isReceipt(pkcs7Signature)) {
+            throw new SystemFontException(FontManager.RESULT_ERROR_VERIFICATION_FAILURE,
+                    "Invalid upload signature");
+        }
+        try {
+            StructStat stat = Os.fstat(fd);
+            if (!OsConstants.S_ISREG(stat.st_mode)
+                    || stat.st_size <= 0 || stat.st_size > MAX_FONT_BYTES) {
+                throw new SystemFontException(FontManager.RESULT_ERROR_INVALID_FONT_FILE,
+                        "Font must be a nonempty regular file no larger than 32 MiB");
+            }
+        } catch (ErrnoException e) {
+            throw new SystemFontException(FontManager.RESULT_ERROR_INVALID_FONT_FILE,
+                    "Could not stat font", e);
+        }
         File newDir = getRandomDir(mFilesDir);
         if (!newDir.mkdir()) {
             throw new SystemFontException(
@@ -596,23 +620,39 @@ final class UpdatableFontDir {
         try {
             File tempNewFontFile = new File(newDir, "font.ttf");
             try (FileOutputStream out = new FileOutputStream(tempNewFontFile)) {
-                FileUtils.copy(fd, out.getFD());
+                // Check actual copied bytes too, since callers can grow a file after fstat.
+                long copied = FileUtils.copy(fd, out.getFD(), MAX_FONT_BYTES + 1,
+                        null, null, null);
+                if (copied <= 0 || copied > MAX_FONT_BYTES) {
+                    throw new SystemFontException(FontManager.RESULT_ERROR_INVALID_FONT_FILE,
+                            "Font size outside allowed range");
+                }
             } catch (IOException e) {
                 throw new SystemFontException(
                         FontManager.RESULT_ERROR_FAILED_TO_WRITE_FONT_FILE,
                         "Failed to write font file to storage.", e);
             }
-            boolean isUnsignedCustomFont = axFontFeatureSupport && pkcs7Signature.length == 0;
-            if (!isUnsignedCustomFont) {
-                try {
-                    // Do not parse font file before setting up fs-verity.
-                    // setUpFsverity throws IOException if failed.
+            try {
+                if (pkcs7Signature.length == 0) {
+                    // Raw custom input must never reach any native parser in system_server.
+                    // Replace it with only the isolated worker's rewritten, sealed output.
+                    pkcs7Signature = mFsverityUtil.sanitize(tempNewFontFile);
+                    if (!FontSanitizationReceipt.isReceipt(pkcs7Signature)) {
+                        throw new IOException("Sanitizer did not provide an output receipt");
+                    }
+                } else {
                     mFsverityUtil.setUpFsverity(tempNewFontFile.getAbsolutePath());
-                } catch (IOException e) {
-                    throw new SystemFontException(
-                            FontManager.RESULT_ERROR_VERIFICATION_FAILURE,
-                            "Failed to setup fs-verity.", e);
                 }
+            } catch (IOException e) {
+                throw new SystemFontException(FontManager.RESULT_ERROR_VERIFICATION_FAILURE,
+                        "Could not sanitize and seal font", e);
+            }
+            // Both provider signatures and locally issued sanitized-output receipts must be
+            // verified BEFORE buildFontFileName's native metadata parsing, including on reboot.
+            if (!mFsverityUtil.isFromTrustedProvider(
+                    tempNewFontFile.getAbsolutePath(), pkcs7Signature)) {
+                throw new SystemFontException(FontManager.RESULT_ERROR_VERIFICATION_FAILURE,
+                        "Font authentication failed");
             }
             String fontFileName;
             try {
@@ -622,7 +662,10 @@ final class UpdatableFontDir {
                         FontManager.RESULT_ERROR_INVALID_FONT_FILE,
                         "Failed to read PostScript name from font file", e);
             }
-            if (fontFileName == null) {
+            if (fontFileName == null || fontFileName.isEmpty()
+                    || fontFileName.equals(".") || fontFileName.equals("..")
+                    || fontFileName.indexOf('/') >= 0 || fontFileName.indexOf('\\') >= 0
+                    || fontFileName.indexOf('\0') >= 0) {
                 throw new SystemFontException(
                         FontManager.RESULT_ERROR_INVALID_FONT_NAME,
                         "Failed to read PostScript name from font file");
@@ -832,7 +875,8 @@ final class UpdatableFontDir {
     @NonNull
     private FontFileInfo validateFontFile(File file, byte[] pkcs7Signature)
             throws SystemFontException {
-        if (!mFsverityUtil.isFromTrustedProvider(file.getAbsolutePath(), pkcs7Signature)) {
+        if (pkcs7Signature == null || pkcs7Signature.length == 0
+                || !mFsverityUtil.isFromTrustedProvider(file.getAbsolutePath(), pkcs7Signature)) {
             throw new SystemFontException(
                     FontManager.RESULT_ERROR_VERIFICATION_FAILURE,
                     "Font validation failed. Fs-verity is not enabled: " + file);

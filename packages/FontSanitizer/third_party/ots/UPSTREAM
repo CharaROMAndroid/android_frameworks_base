@@ -1,0 +1,8 @@
+https://github.com/khaledhosny/ots.git
+869841bce1588839f17fe07626ce08a4befaf8ad
+
+Local Android policy changes in src/glyf.cc and src/glyf.h strip simple and
+composite TrueType instructions after validation, rebuild loca, zero maxp
+interpreter resources and clear head instruction-dependent flags. All sfnt
+checksums are recomputed by the upstream OTS serializer. CFF/CFF2 hints keep
+upstream OTS charstring validation. See tests/dehint_test.py.
