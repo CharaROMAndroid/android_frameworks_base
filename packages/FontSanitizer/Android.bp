@@ -6,27 +6,6 @@ license {
     license_kinds: ["SPDX-license-identifier-BSD-3-Clause"],
     license_text: ["third_party/ots/LICENSE"],
 }
-license {
-    name: "fontsanitizer_woff2_license",
-    license_kinds: ["SPDX-license-identifier-MIT"],
-    license_text: ["third_party/woff2/LICENSE"],
-}
-cc_library_static {
-    name: "libfontsanitizer_woff2dec",
-    stl: "libc++_static",
-    licenses: ["fontsanitizer_woff2_license"],
-    srcs: [
-        "third_party/woff2/src/table_tags.cc",
-        "third_party/woff2/src/variable_length.cc",
-        "third_party/woff2/src/woff2_common.cc",
-        "third_party/woff2/src/woff2_dec.cc",
-        "third_party/woff2/src/woff2_out.cc",
-    ],
-    export_include_dirs: ["third_party/woff2/include"],
-    local_include_dirs: ["third_party/woff2/src"],
-    static_libs: ["libbrotli"],
-    cflags: ["-Wno-unused-parameter"],
-}
 cc_library_static {
     name: "libfontsanitizer_ots",
     stl: "libc++_static",
@@ -74,14 +53,13 @@ cc_library_static {
     ],
     export_include_dirs: ["third_party/ots/include"],
     local_include_dirs: ["third_party/ots/src"],
-    static_libs: ["libfontsanitizer_woff2dec"],
     shared_libs: ["libz"],
     cflags: ["-Wno-unused-parameter", "-Wno-sign-compare"],
 }
 cc_library_shared {
     name: "libfontsanitizer_jni",
     srcs: ["jni/FontSanitizer.cpp", "jni/Sanitize.cpp"],
-    static_libs: ["libfontsanitizer_ots", "libfontsanitizer_woff2dec", "libbrotli"],
+    static_libs: ["libfontsanitizer_ots"],
     shared_libs: ["libz"],
     header_libs: ["jni_headers"],
     cflags: ["-Wall", "-Werror"],
