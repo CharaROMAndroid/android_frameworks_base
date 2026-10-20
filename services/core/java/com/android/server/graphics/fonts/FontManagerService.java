@@ -24,8 +24,10 @@ import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.fonts.FontFamily;
 import android.graphics.fonts.FontManager;
+import android.graphics.fonts.FontSanitizer;
 import android.graphics.fonts.FontUpdateRequest;
 import android.graphics.fonts.SystemFonts;
+import android.os.Binder;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.os.ResultReceiver;
@@ -268,17 +270,49 @@ public final class FontManagerService extends IFontManager.Stub {
     private static class FsverityUtilImpl implements UpdatableFontDir.FsverityUtil {
 
         private final String[] mDerCertPaths;
+        private final Context mContext;
+        private final FontSanitizationReceipt mReceipt;
 
-        FsverityUtilImpl(String[] derCertPaths) {
+        FsverityUtilImpl(Context context, String[] derCertPaths) {
+            mContext = context;
             mDerCertPaths = derCertPaths;
+            mReceipt = new FontSanitizationReceipt(
+                    new File("/data/fonts/config/sanitizer.key"));
+        }
+
+        @Override
+        public byte[] sanitize(File input) throws IOException {
+            File output = new File(input.getParentFile(), "sanitized.tmp");
+            try {
+                // The isolated worker has no file-system path access or signing capability.
+                final long identity = Binder.clearCallingIdentity();
+                try {
+                    FontSanitizer.sanitize(mContext, input, output);
+                } finally {
+                    Binder.restoreCallingIdentity(identity);
+                }
+                VerityUtils.setUpFsverity(output.getAbsolutePath());
+                byte[] receipt = mReceipt.issue(
+                        VerityUtils.getFsverityDigest(output.getAbsolutePath()));
+                if (!output.renameTo(input)) {
+                    throw new IOException("Cannot replace raw input with sanitized font");
+                }
+                return receipt;
+            } finally {
+                output.delete();
+            }
         }
 
         @Override
         public boolean isFromTrustedProvider(String fontPath, byte[] pkcs7Signature) {
+            if (pkcs7Signature == null || pkcs7Signature.length == 0) return false;
             final byte[] digest = VerityUtils.getFsverityDigest(fontPath);
             if (digest == null) {
                 Log.w(TAG, "Failed to get fs-verity digest for " + fontPath);
                 return false;
+            }
+            if (FontSanitizationReceipt.isReceipt(pkcs7Signature)) {
+                return mReceipt.verify(pkcs7Signature, digest);
             }
             for (String certPath : mDerCertPaths) {
                 try (InputStream is = new FileInputStream(certPath)) {
@@ -379,13 +413,9 @@ public final class FontManagerService extends IFontManager.Stub {
     }
 
     @Nullable
-    private UpdatableFontDir createUpdatableFontDir() {
-        // Never read updatable font files in safe mode.
-        if (mIsSafeMode) return null;
-        // Shipping API level is only a proxy. Kernels for devices that shipped before R can
-        // still implement fs-verity, so check the filesystem that will store the font.
+        // Even custom imports need immutable on-disk output. No unsigned integrity bypass.
+        // Check the filesystem that will store the font, not just the kernel/API level.
         if (!isFontDirFsverityAvailable()) return null;
-
         String[] certs = mContext.getResources().getStringArray(
                 R.array.config_fontManagerServiceCerts);
 
@@ -397,7 +427,7 @@ public final class FontManagerService extends IFontManager.Stub {
         }
 
         return new UpdatableFontDir(new File(FONT_FILES_DIR), new OtfFontFileParser(),
-                new FsverityUtilImpl(certs), new File(CONFIG_XML_FILE));
+                new FsverityUtilImpl(mContext, certs), new File(CONFIG_XML_FILE));
     }
 
     @GuardedBy("mUpdatableFontDirLock")
