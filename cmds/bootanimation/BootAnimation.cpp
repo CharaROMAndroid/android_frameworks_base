@@ -73,12 +73,7 @@ namespace android {
 
 using ui::DisplayMode;
 
-static const char OEM_BOOTANIMATION_FILE[] = "/oem/media/bootanimation.zip";
-static const char PRODUCT_BOOTANIMATION_DIR[] = "/product/media/";
-static const char PRODUCT_BOOTANIMATION_DARK_FILE[] = "bootanimation-dark.zip";
-static const char PRODUCT_BOOTANIMATION_FILE[] = "bootanimation.zip";
 static const char SYSTEM_BOOTANIMATION_FILE[] = "/system/media/bootanimation.zip";
-static const char APEX_BOOTANIMATION_FILE[] = "/apex/com.android.bootanimation/etc/bootanimation.zip";
 static const char OEM_SHUTDOWNANIMATION_FILE[] = "/oem/media/shutdownanimation.zip";
 static const char PRODUCT_SHUTDOWNANIMATION_FILE[] = "/product/media/shutdownanimation.zip";
 static const char SYSTEM_SHUTDOWNANIMATION_FILE[] = "/system/media/shutdownanimation.zip";
