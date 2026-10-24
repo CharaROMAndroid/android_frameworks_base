@@ -5380,6 +5380,12 @@ public final class PowerManagerService extends SystemService
                     reason.length() - PowerManager.REBOOT_QUIESCENT.length() - 1);
         }
 
+        // Keep the internal marker through shutdown UI selection, but never send
+        // an unknown recovery target to the bootloader.
+        if (reason.equals(DuressReboot.RECOVERY)) {
+            reason = PowerManager.REBOOT_RECOVERY;
+        }
+
         if (reason.equals(PowerManager.REBOOT_RECOVERY)
                 || reason.equals(PowerManager.REBOOT_RECOVERY_UPDATE)) {
             reason = "recovery";
@@ -7632,6 +7638,13 @@ public final class PowerManagerService extends SystemService
         @Override // Binder call
         public void reboot(boolean confirm, @Nullable String reason, boolean wait) {
             mContext.enforceCallingOrSelfPermission(android.Manifest.permission.REBOOT, null);
+            if (DuressReboot.isDuressReboot(reason)) {
+                mContext.enforceCallingOrSelfPermission(android.Manifest.permission.RECOVERY, null);
+                if (!DuressReboot.isTrustedCaller(Binder.getCallingUid(), Binder.getCallingPid(),
+                        Process.SYSTEM_UID, Process.myPid())) {
+                    throw new SecurityException("Duress reboot is reserved for system_server");
+                }
+            }
             if (PowerManager.REBOOT_RECOVERY.equals(reason)
                     || PowerManager.REBOOT_RECOVERY_UPDATE.equals(reason)) {
                 mContext.enforceCallingOrSelfPermission(android.Manifest.permission.RECOVERY, null);
@@ -7676,6 +7689,13 @@ public final class PowerManagerService extends SystemService
         @Override // Binder call
         public void rebootCustom(boolean confirm, String reason, boolean wait) {
             mContext.enforceCallingOrSelfPermission(android.Manifest.permission.REBOOT, null);
+            if (DuressReboot.isDuressReboot(reason)) {
+                mContext.enforceCallingOrSelfPermission(android.Manifest.permission.RECOVERY, null);
+                if (!DuressReboot.isTrustedCaller(Binder.getCallingUid(), Binder.getCallingPid(),
+                        Process.SYSTEM_UID, Process.myPid())) {
+                    throw new SecurityException("Duress reboot is reserved for system_server");
+                }
+            }
             if (PowerManager.REBOOT_RECOVERY.equals(reason)) {
                 mContext.enforceCallingOrSelfPermission(android.Manifest.permission.RECOVERY, null);
             }

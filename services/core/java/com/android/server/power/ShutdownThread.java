@@ -484,7 +484,10 @@ public final class ShutdownThread extends Thread {
             SystemProperties.set(SHUTDOWN_ACTION_PROPERTY, reason);
         }
 
-        sInstance.mProgressDialog = showShutdownDialog(context);
+        // Skip both the framework dialog and the SystemUI path for duress only.
+        // Do not use quiescent mode: its bootloader property persists across boots.
+        sInstance.mProgressDialog = sInstance.mReboot && DuressReboot.isDuressReboot(mReason)
+                ? null : showShutdownDialog(context);
         sInstance.mContext = context;
         sInstance.mPowerManager = (PowerManager)context.getSystemService(Context.POWER_SERVICE);
 
