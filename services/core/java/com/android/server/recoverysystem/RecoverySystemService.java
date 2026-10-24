@@ -71,6 +71,7 @@ import com.android.server.Watchdog;
 import com.android.server.locksettings.LockSettingsInternal;
 import com.android.server.locksettings.RebootEscrowListener;
 import com.android.server.pm.ApexManager;
+import com.android.server.power.DuressReboot;
 import com.android.server.recoverysystem.hal.BootControlHIDL;
 import com.android.server.utils.Slogf;
 
@@ -534,6 +535,11 @@ public class RecoverySystemService extends IRecoverySystem.Stub implements Reboo
     public void rebootRecoveryWithCommand(String command) {
         if (DEBUG) Slog.d(TAG, "rebootRecoveryWithCommand: [" + command + "]");
 
+        final boolean isDuressWipe = DuressReboot.isDuressWipeCommand(command);
+        if (isDuressWipe && !DuressReboot.isTrustedCaller(Binder.getCallingUid(),
+                Binder.getCallingPid(), Process.SYSTEM_UID, Process.myPid())) {
+            throw new SecurityException("Duress recovery is reserved for system_server");
+        }
         boolean isForcedWipe = command != null && command.contains(RECOVERY_WIPE_DATA_COMMAND);
         synchronized (sRequestLock) {
             if (!setupOrClearBcb(true, command)) {
@@ -549,7 +555,7 @@ public class RecoverySystemService extends IRecoverySystem.Stub implements Reboo
 
             // Having set up the BCB, go ahead and reboot.
             PowerManager pm = mInjector.getPowerManager();
-            pm.reboot(PowerManager.REBOOT_RECOVERY);
+            pm.reboot(isDuressWipe ? DuressReboot.RECOVERY : PowerManager.REBOOT_RECOVERY);
         }
     }
 
