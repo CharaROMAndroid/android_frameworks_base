@@ -195,6 +195,7 @@ import android.os.Trace;
 import android.os.UEventObserver;
 import android.os.UserHandle;
 import android.os.VibrationAttributes;
+import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.pocket.IPocketCallback;
 import android.pocket.PocketManager;
@@ -1821,7 +1822,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     KEYCODE_BACK, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
                     KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
 
-            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, "Back - Long Press");
+            performLongPressHapticFeedback(mBackLongPressAction, "Back - Long Press");
             performKeyAction(mBackLongPressAction, event);
         }
     }
@@ -1861,7 +1862,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     KeyEvent.KEYCODE_APP_SWITCH, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
                     KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
 
-            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, "Recents - Long Press");
+            performLongPressHapticFeedback(mAppSwitchLongPressAction, "Recents - Long Press");
             performKeyAction(mAppSwitchLongPressAction, event);
         }
     }
@@ -1892,7 +1893,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     KeyEvent.KEYCODE_ASSIST, 0, 0, KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
                     KeyEvent.FLAG_FROM_SYSTEM, InputDevice.SOURCE_KEYBOARD);
 
-            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, "Assist - Long Press");
+            performLongPressHapticFeedback(mAssistLongPressAction, "Assist - Long Press");
             performKeyAction(mAssistLongPressAction, event,
                     AssistUtils.INVOCATION_TYPE_ASSIST_BUTTON);
         }
@@ -2392,6 +2393,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             case NOTHING:
                 return false;
             case PLAY_PAUSE_MUSIC:
+            case CYCLE_RINGER_MODE:
                 return true;
             case LAUNCH_CAMERA:
             case SLEEP:
@@ -2474,11 +2476,41 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             case QS_PANEL:
                 toggleQsPanel();
                 break;
-            case RINGER_MODES:
-                toggleRingerModes();
+            case CYCLE_RINGER_MODE:
+                cycleRingerMode();
                 break;
             default:
                 break;
+        }
+    }
+
+    private void cycleRingerMode() {
+        final AudioManagerInternal audioManager = getAudioManagerInternal();
+        final int ringerMode;
+        switch (audioManager.getRingerModeInternal()) {
+            case AudioManager.RINGER_MODE_SILENT:
+                ringerMode = mVibrator.hasVibrator()
+                        ? AudioManager.RINGER_MODE_VIBRATE : AudioManager.RINGER_MODE_NORMAL;
+                break;
+            case AudioManager.RINGER_MODE_VIBRATE:
+                ringerMode = AudioManager.RINGER_MODE_NORMAL;
+                break;
+            case AudioManager.RINGER_MODE_NORMAL:
+                ringerMode = AudioManager.RINGER_MODE_SILENT;
+                break;
+            default:
+                return;
+        }
+        audioManager.setRingerModeInternal(ringerMode, TAG);
+        if (audioManager.getRingerModeInternal() != ringerMode) {
+            return;
+        }
+        if (ringerMode == AudioManager.RINGER_MODE_SILENT
+                || ringerMode == AudioManager.RINGER_MODE_VIBRATE) {
+            final int effect = ringerMode == AudioManager.RINGER_MODE_SILENT
+                    ? VibrationEffect.EFFECT_CLICK : VibrationEffect.EFFECT_DOUBLE_CLICK;
+            mVibrator.vibrate(VibrationEffect.get(effect),
+                    VibrationAttributes.createForUsage(VibrationAttributes.USAGE_TOUCH));
         }
     }
 
@@ -2598,7 +2630,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                         cancelPreloadRecentApps();
                     }
                     mHomePressed = true;
-                    performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, "Home - Long Press");
+                    performLongPressHapticFeedback(mHomeLongPressAction, "Home - Long Press");
                     // If long press home will launch assistant,
                     // it should pass this right invocation type.
                     performKeyAction(mHomeLongPressAction, event,
@@ -4121,7 +4153,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             if (mMenuLongPressAction != Action.APP_SWITCH) {
                                 cancelPreloadRecentApps();
                             }
-                            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS,
+                            performLongPressHapticFeedback(mMenuLongPressAction,
                                     "Menu - Long Press");
                             performKeyAction(mMenuLongPressAction, event);
                             mMenuPressed = false;
@@ -7473,6 +7505,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         return true;
     }
 
+    private void performLongPressHapticFeedback(Action action, String reason) {
+        if (action != Action.CYCLE_RINGER_MODE) {
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, reason);
+        }
+    }
+
     private void performHapticFeedback(int effectId, String reason) {
         performHapticFeedback(effectId, reason, 0 /* flags */);
     }
@@ -8124,26 +8162,6 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             } catch (RemoteException e) {
                 // do nothing.
             }
-        }
-    }
-
-    private void toggleRingerModes() {
-        AudioManager am = (AudioManager) mContext.getSystemService(Context.AUDIO_SERVICE);
-
-        switch (am.getRingerMode()) {
-            case AudioManager.RINGER_MODE_NORMAL:
-                if (mVibrator.hasVibrator()) {
-                    am.setRingerMode(AudioManager.RINGER_MODE_VIBRATE);
-                }
-                break;
-            case AudioManager.RINGER_MODE_VIBRATE:
-                am.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
-                NotificationManager nm = getNotificationService();
-                nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY);
-                break;
-            case AudioManager.RINGER_MODE_SILENT:
-                am.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
-                break;
         }
     }
 }
