@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -235,6 +236,9 @@ public class HidlToAidlSensorAdapterTest {
     public void serviceDiedTest() {
         mHidlToAidlSensorAdapter.setScheduler(mBiometricScheduler);
         mHidlToAidlSensorAdapter.serviceDied(0 /* cookie */);
+
+        verify(mBiometricScheduler, never()).reset();
+        mLooper.dispatchAll();
 
         assertThat(mHidlToAidlSensorAdapter.getLazySession().get().getUserId()).isEqualTo(
                 UserHandle.USER_NULL);
