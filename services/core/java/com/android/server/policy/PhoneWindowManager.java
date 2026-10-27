@@ -3444,8 +3444,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         if (mMenuLongPressAction == Action.NOTHING && (hasMenu && !hasAssist)) {
             mMenuLongPressAction = Action.SEARCH;
         }
-        mAssistPressAction = Action.SEARCH;
-        mAssistLongPressAction = Action.VOICE_SEARCH;
+        mAssistPressAction = Action.fromIntSafe(res.getInteger(
+                org.lineageos.platform.internal.R.integer.config_pressOnAssistBehavior));
+        mAssistLongPressAction = Action.fromIntSafe(res.getInteger(
+                org.lineageos.platform.internal.R.integer.config_longPressOnAssistBehavior));
         mAppSwitchPressAction = Action.APP_SWITCH;
         mAppSwitchLongPressAction = Action.fromIntSafe(res.getInteger(
                 org.lineageos.platform.internal.R.integer.config_longPressOnAppSwitchBehavior));
