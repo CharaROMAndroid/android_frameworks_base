@@ -175,10 +175,6 @@
     "frameworks/base/packages/SystemUI/res/layout/wallet_fullscreen.xml",
     "frameworks/base/packages/SystemUI/res/layout/chipbar.xml",
     "frameworks/base/packages/SystemUI/res/layout/notification_snooze.xml",
-    "vendor/unbundled_google/packages/SystemUIGoogle/res/drawable/columbus_chip_background_raw.xml",
-    "vendor/unbundled_google/packages/SystemUIGoogle/res/drawable/columbus_chip_background_raw.xml",
-    "vendor/unbundled_google/packages/SystemUIGoogle/res/drawable/columbus_dialog_background.xml",
-    "vendor/unbundled_google/packages/SystemUIGoogle/res/layout/columbus_target_request_dialog.xml",
     "vendor/unbundled_google/packages/SettingsGoogle/res/color/dream_card_suw_color_state_list.xml",
     "vendor/unbundled_google/packages/SettingsGoogle/res/drawable/dream_item_suw_rounded_bg.xml"
 ]
