@@ -2,7 +2,8 @@
 #include "Sanitize.h"
 #include <cerrno>
 #include <cstring>
-#include <sys/stat.h>
+#include <android/sharedmem.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include "opentype-sanitiser.h"
 #include "ots-memory-stream.h"
@@ -50,18 +51,17 @@ bool CheckDirectory(const std::vector<uint8_t>& bytes) {
 }
 bool SanitizeFd(int fd, std::vector<uint8_t>* output) {
     output->clear();
-    struct stat st {};
-    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)
-            || st.st_size < 12 || uint64_t(st.st_size) > kMaxBytes) return false;
-    // Copy first. No pointers into caller-writable files reach the parser.
-    std::vector<uint8_t> snapshot(static_cast<size_t>(st.st_size));
-    size_t done = 0;
-    while (done < snapshot.size()) {
-        ssize_t n = pread(fd, snapshot.data() + done, snapshot.size() - done, done);
-        if (n < 0 && errno == EINTR) continue;
-        if (n <= 0) return false;
-        done += static_cast<size_t>(n);
-    }
+    // SharedMemory uses ashmem on older kernels and memfd on newer ones. An ashmem
+    // descriptor is a character device, so S_ISREG/pread is not a valid transport contract.
+    // Query through the shared-memory API and map read-only, never open a caller's path.
+    const size_t size = ASharedMemory_getSize(fd);
+    if (size < 12 || size > kMaxBytes) return false;
+    const void* mapping = mmap(nullptr, size, PROT_READ, MAP_SHARED, fd, 0);
+    if (mapping == MAP_FAILED) return false;
+    // No pointers into caller-controlled mappings reach OTS.
+    std::vector<uint8_t> snapshot(size);
+    memcpy(snapshot.data(), mapping, size);
+    munmap(const_cast<void*>(mapping), size);
     if (!CheckDirectory(snapshot)) return false;
     UnhintedContext context;
     ots::ExpandingMemoryStream stream(4096, kMaxBytes);
