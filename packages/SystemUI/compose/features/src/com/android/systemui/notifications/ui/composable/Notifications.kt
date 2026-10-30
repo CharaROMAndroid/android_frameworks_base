@@ -63,6 +63,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollDispatcher
@@ -101,6 +102,7 @@ import com.android.compose.nestedscroll.PriorityNestedScrollConnection
 import com.android.compose.nestedscroll.ScrollController
 import com.android.internal.jank.Cuj.CUJ_NOTIFICATION_SHADE_SCROLL_FLING
 import com.android.internal.jank.InteractionJankMonitor
+import com.android.systemui.common.ui.LowGpuScrim
 import com.android.systemui.common.ui.compose.windowinsets.LocalScreenCornerRadius
 import com.android.systemui.notifications.intelligence.rules.shared.NmContextualDisplayLaunch
 import com.android.systemui.notifications.intelligence.rules.ui.viewmodel.NotificationRulesParentViewModel
@@ -641,38 +643,82 @@ fun ContentScope.NestedScrollingNotificationPanel(
                             )
                         }
                         .onUnplaced { viewModel.onScrimBoundsChanged(null) }
-                        .graphicsLayer {
-                            shape =
-                                calculateCornerRadius(
-                                        scrimCornerRadius,
-                                        screenCornerRadius,
-                                        { expansionFraction },
+                        .then(
+                            if (
+                                LowGpuScrim.enabled &&
+                                    shouldDrawScrimBackground &&
+                                    !shouldPunchHoleBehindScrim
+                            ) {
+                                // This Box has no children. Draw its one colored shape directly
+                                // instead of clipping a rectangular background through two layers.
+                                Modifier.drawBehind {
+                                    val transitioning =
                                         shouldAnimateScrimCornerRadius(
                                             layoutState,
                                             shouldPunchHoleBehindScrim,
                                             viewModel.notificationsShadeContentKey,
-                                        ),
+                                        )
+                                    val scrimShape =
+                                        calculateCornerRadius(
+                                                scrimCornerRadius,
+                                                screenCornerRadius,
+                                                { expansionFraction },
+                                                transitioning,
+                                            )
+                                            .let { scrimRounding.value.toRoundedCornerShape(it) }
+                                    val scrimOutline =
+                                        scrimShape.createOutline(size, layoutDirection, this)
+                                    drawOutline(
+                                        scrimOutline,
+                                        color = classicShadeNotificationScrimBgColor,
+                                        alpha =
+                                            (expansionFraction / EXPANSION_FOR_MAX_SCRIM_ALPHA)
+                                                .coerceAtMost(1f),
                                     )
-                                    .let { scrimRounding.value.toRoundedCornerShape(it) }
-                            clip = true
-                        }
-                        // The DstOut blend mode is used to punch a transparent hole through
-                        // the scrim's background, cutting out the QQS tiles. When used in
-                        // conjunction with CompositingStrategy.Offscreen on the parent,
-                        // it will only affects content on the current Scene.
-                        .thenIf(shouldPunchHoleBehindScrim) {
-                            Modifier.drawBehind {
-                                drawRect(Color.Black, blendMode = BlendMode.DstOut)
+                                }
+                            } else {
+                                Modifier.graphicsLayer {
+                                        shape =
+                                            calculateCornerRadius(
+                                                    scrimCornerRadius,
+                                                    screenCornerRadius,
+                                                    { expansionFraction },
+                                                    shouldAnimateScrimCornerRadius(
+                                                        layoutState,
+                                                        shouldPunchHoleBehindScrim,
+                                                        viewModel.notificationsShadeContentKey,
+                                                    ),
+                                                )
+                                                .let {
+                                                    scrimRounding.value.toRoundedCornerShape(it)
+                                                }
+                                        clip = true
+                                    }
+                                    // The DstOut blend mode is used to punch a transparent hole
+                                    // through
+                                    // the scrim's background, cutting out the QQS tiles. When used
+                                    // in
+                                    // conjunction with CompositingStrategy.Offscreen on the parent,
+                                    // it will only affects content on the current Scene.
+                                    .thenIf(shouldPunchHoleBehindScrim) {
+                                        Modifier.drawBehind {
+                                            drawRect(Color.Black, blendMode = BlendMode.DstOut)
+                                        }
+                                    }
+                                    .graphicsLayer {
+                                        alpha =
+                                            (expansionFraction / EXPANSION_FOR_MAX_SCRIM_ALPHA)
+                                                .coerceAtMost(1f)
+                                    }
+                                    // The background color that makes the surface behind
+                                    // Notifications.
+                                    .thenIf(shouldDrawScrimBackground) {
+                                        Modifier.background(
+                                            color = classicShadeNotificationScrimBgColor
+                                        )
+                                    }
                             }
-                        }
-                        .graphicsLayer {
-                            alpha =
-                                (expansionFraction / EXPANSION_FOR_MAX_SCRIM_ALPHA).coerceAtMost(1f)
-                        }
-                        // The background color that makes the surface behind Notifications.
-                        .thenIf(shouldDrawScrimBackground) {
-                            Modifier.background(color = classicShadeNotificationScrimBgColor)
-                        }
+                        )
             )
         },
     )

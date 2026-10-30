@@ -72,6 +72,7 @@ import com.android.compose.lifecycle.LaunchedEffectWithLifecycle
 import com.android.compose.modifiers.thenIf
 import com.android.compose.windowsizeclass.LocalWindowSizeClass
 import com.android.internal.jank.InteractionJankMonitor
+import com.android.systemui.common.ui.LowGpuScrim
 import com.android.systemui.common.ui.compose.windowinsets.CutoutLocation
 import com.android.systemui.common.ui.compose.windowinsets.LocalDisplayCutout
 import com.android.systemui.compose.modifiers.sysuiResTag
@@ -220,7 +221,8 @@ private fun ContentScope.QuickSettingsScene(
     val animatedBlurRadiusPx: Float by
         animateFloatAsState(targetValue = targetBlur, label = "QS-blurRadius")
     val onlyPunchHolesInThisScene =
-        layoutState.isTransitioningBetween(Scenes.Gone, Scenes.QuickSettings) ||
+        (!LowGpuScrim.enabled &&
+            layoutState.isTransitioningBetween(Scenes.Gone, Scenes.QuickSettings)) ||
             layoutState.isTransitioningBetween(Scenes.Lockscreen, Scenes.QuickSettings)
     Box(
         modifier
@@ -330,7 +332,7 @@ private fun ContentScope.QuickSettingsScene(
                 viewModel = notificationsPlaceholderViewModel,
                 notificationRulesParentViewModel = notificationRulesParentViewModel,
                 jankMonitor = jankMonitor,
-                shouldPunchHoleBehindScrim = true,
+                shouldPunchHoleBehindScrim = !LowGpuScrim.enabled || onlyPunchHolesInThisScene,
                 shouldFillMaxHeight = true,
                 isTransparencyEnabled = viewModel.isTransparencyEnabled,
                 stackTopPadding = dimensionResource(id = R.dimen.notification_side_paddings_single),
