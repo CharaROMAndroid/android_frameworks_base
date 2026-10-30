@@ -22,6 +22,7 @@ import android.system.OsConstants;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CountDownLatch;
@@ -76,8 +77,10 @@ public final class FontSanitizer {
         final boolean[] closed = new boolean[1];
         final boolean[] delivered = new boolean[1];
         final boolean[] connected = new boolean[1];
-        try (ParcelFileDescriptor fd = ParcelFileDescriptor.open(
-                input, ParcelFileDescriptor.MODE_READ_ONLY)) {
+        // Never pass cache/data file descriptors across the isolation boundary. Binder FD
+        // transfer does not bypass SELinux inode checks, even for an already-open file.
+        try (SharedMemory source = snapshotInput(input);
+                ParcelFileDescriptor fd = source.getFdDup()) {
             final IFontSanitizerCallback callback = new IFontSanitizerCallback.Stub() {
                 @Override
                 public void onResult(SharedMemory memory) {
@@ -162,4 +165,37 @@ public final class FontSanitizer {
             }
         }
     }
+    private static SharedMemory snapshotInput(File input) throws IOException {
+        SharedMemory memory = null;
+        boolean success = false;
+        try (FileInputStream stream = new FileInputStream(input)) {
+            long size = stream.getChannel().size();
+            if (size <= 0 || size > MAX_FONT_BYTES) {
+                throw new IOException("Font input size outside allowed range");
+            }
+            memory = SharedMemory.create("raw-font-input", (int) size);
+            ByteBuffer mapping = memory.mapReadWrite();
+            try {
+                while (mapping.hasRemaining()) {
+                    if (stream.getChannel().read(mapping) < 0) {
+                        throw new IOException("Font input shrank during snapshot");
+                    }
+                }
+                if (stream.read() != -1) throw new IOException("Font input grew during snapshot");
+            } finally {
+                SharedMemory.unmap(mapping);
+            }
+            // Remove every writable mapping before sealing; the receiver only needs read/map.
+            if (!memory.setProtect(OsConstants.PROT_READ)) {
+                throw new IOException("Cannot protect font input shared memory");
+            }
+            success = true;
+            return memory;
+        } catch (ErrnoException | RuntimeException e) {
+            throw new IOException("Could not snapshot font input", e);
+        } finally {
+            if (!success && memory != null) memory.close();
+        }
+    }
+
 }

@@ -5,8 +5,11 @@ and binds the explicit com.android.fontsanitizer/.FontSanitizerService component
 Only system UID may invoke sanitize, in addition to manifest UPDATE_FONTS binding
 permission. No permissions are requested by this app.
 
-The worker accepts regular file descriptors, copies at most 32 MiB into private
-native storage, and accepts only raw sfnt TrueType/OpenType. TTC, WOFF and WOFF2
+The client copies at most 32 MiB into shared memory and removes writable mappings
+before applying read-only protection. Only its duplicated shared-memory FD crosses
+Binder; cache/data file FDs never enter the worker. The worker uses libandroid
+ASharedMemory_getSize and read-only mmap so both legacy ashmem character devices
+and modern memfd regions are supported, then copies into private native storage. It and accepts only raw sfnt TrueType/OpenType. TTC, WOFF and WOFF2
 are rejected before OTS. The directory is limited to 128 tables, whose aggregate
 declared input size is at most 32 MiB. Default OTS table handling validates
 supported tables and drops unknown tables, never a passthrough override.
@@ -67,3 +70,22 @@ instruction bytes, complete table/font checksums, repeat sanitation and
 FreeType rasterization. See tests/dehint_test.py for a reproducible host test.
 This closes the retained TrueType bytecode path, not all native renderer risk.
 No full product build or device verification has been run.
+
+
+October 30 selective framework port
+
+The custom-font APIs sanitize independently in system_server before native metadata
+or Typeface work. Reboot loading verifies keyed fs-verity output receipts before
+any PostScript-name lookup, including custom-font selection checks. Provider
+PKCS#7 signatures retain their separate verification path. Uploaded local receipts
+are rejected; bare fs-verity is never sufficient authentication.
+
+Source-policy audit found appdomain read/map/getattr of system_server_tmpfs:file,
+system_server:memfd_file, appdomain_tmpfs:file and appdomain:memfd_file, plus
+system_server read/map of appdomain output and Binder FD-use permissions.
+isolated_app belongs to appdomain. No cache-file access or policy changes added.
+These source checks do not replace compiling the complete product policy or
+testing the actual device, including legacy ashmem.
+
+Host tests use a test-only libandroid getSize substitute and sealed Linux memfds.
+They test the mmap/copy path but cannot validate Android ashmem ioctls or labels.

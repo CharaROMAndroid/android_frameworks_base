@@ -60,7 +60,7 @@ cc_library_shared {
     name: "libfontsanitizer_jni",
     srcs: ["jni/FontSanitizer.cpp", "jni/Sanitize.cpp"],
     static_libs: ["libfontsanitizer_ots"],
-    shared_libs: ["libz"],
+    shared_libs: ["libz", "libandroid"],
     header_libs: ["jni_headers"],
     cflags: ["-Wall", "-Werror"],
     stl: "libc++_static",
