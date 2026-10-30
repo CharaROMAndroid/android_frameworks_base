@@ -84,6 +84,7 @@ import com.android.compose.modifiers.height
 import com.android.compose.modifiers.padding
 import com.android.compose.modifiers.thenIf
 import com.android.internal.jank.InteractionJankMonitor
+import com.android.systemui.common.ui.LowGpuScrim
 import com.android.systemui.common.ui.compose.windowinsets.CutoutLocation
 import com.android.systemui.common.ui.compose.windowinsets.LocalDisplayCutout
 import com.android.systemui.compose.modifiers.sysuiResTag
@@ -303,7 +304,7 @@ private fun ContentScope.SingleShade(
     LaunchedEffectWithLifecycle(Unit) { viewModel.detectShadeModeChanges() }
 
     val onlyPunchHolesInThisScene =
-        layoutState.isTransitioningBetween(Scenes.Gone, Scenes.Shade) ||
+        (!LowGpuScrim.enabled && layoutState.isTransitioningBetween(Scenes.Gone, Scenes.Shade)) ||
             layoutState.isTransitioningBetween(Scenes.Lockscreen, Scenes.Shade)
     val mediaInRow = viewModel.showMediaInRow
     val notificationStackPadding = dimensionResource(id = R.dimen.notification_side_paddings_single)
@@ -439,7 +440,7 @@ private fun ContentScope.SingleShade(
                     stackScrollView = notificationStackScrollView,
                     viewModel = notificationsPlaceholderViewModel,
                     notificationRulesParentViewModel = notificationRulesParentViewModel,
-                    shouldPunchHoleBehindScrim = true,
+                    shouldPunchHoleBehindScrim = !LowGpuScrim.enabled || onlyPunchHolesInThisScene,
                     shouldContentFillMaxSize = true,
                     shouldScrimBackgroundFillMaxHeight = true,
                     isTransparencyEnabled = viewModel.isTransparencyEnabled,
