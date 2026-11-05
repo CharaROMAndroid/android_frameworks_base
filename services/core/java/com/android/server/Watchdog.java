@@ -822,6 +822,8 @@ public class Watchdog implements Dumpable {
             }
         } catch (RemoteException e) {
             Log.w(TAG, e);
+        } catch (java.util.NoSuchElementException e) {
+            Log.w(TAG, "HIDL service manager not available", e);
         }
     }
 

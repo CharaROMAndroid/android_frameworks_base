@@ -318,12 +318,16 @@ public class BiometricScheduler<T, U> {
             return;
         }
 
+        final BiometricSchedulerOperation nextOperation = mPendingOperations.peekFirst();
+        if (nextOperation == null) {
+            return;
+        }
         final int currentUserId = mCurrentUserRetriever.get();
-        final int nextUserId = mPendingOperations.getFirst().getTargetUserId();
+        final int nextUserId = nextOperation.getTargetUserId();
         final boolean shouldStartNextOperationIfMarkedCancelling =
-                mPendingOperations.getFirst().isMarkedCanceling();
+                nextOperation.isMarkedCanceling();
 
-        if (nextUserId == currentUserId || mPendingOperations.getFirst().isStartUserOperation()
+        if (nextUserId == currentUserId || nextOperation.isStartUserOperation()
                 || shouldStartNextOperationIfMarkedCancelling) {
             startNextOperationIfIdle();
         } else if (currentUserId == UserHandle.USER_NULL && mUserSwitchProvider != null) {
