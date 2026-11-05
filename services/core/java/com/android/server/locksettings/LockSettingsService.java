@@ -1545,6 +1545,7 @@ public class LockSettingsService extends ILockSettings.Stub {
      * @return true if duress credentials exist
      */
     public boolean hasDuressCredentials(LockscreenCredential userCredential) {
+        checkReadPermission();
         String pinHash = mStorage.getString(DURESS_PIN_HASH_KEY, null, 0);
         String passwordHash = mStorage.getString(DURESS_PASSWORD_HASH_KEY, null, 0);
         return pinHash != null || passwordHash != null;
