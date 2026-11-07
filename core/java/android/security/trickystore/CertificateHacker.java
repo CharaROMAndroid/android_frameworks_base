@@ -13,35 +13,18 @@ import com.android.internal.org.bouncycastle.asn1.ASN1TaggedObject;
 import com.android.internal.org.bouncycastle.asn1.DEROctetString;
 import com.android.internal.org.bouncycastle.asn1.DERSequence;
 import com.android.internal.org.bouncycastle.asn1.DERTaggedObject;
-import com.android.internal.org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import com.android.internal.org.bouncycastle.asn1.x509.Extension;
 import com.android.internal.org.bouncycastle.cert.X509CertificateHolder;
 import com.android.internal.org.bouncycastle.cert.X509v3CertificateBuilder;
-import com.android.internal.org.bouncycastle.crypto.digests.SHA256Digest;
-import com.android.internal.org.bouncycastle.crypto.params.ECDomainParameters;
-import com.android.internal.org.bouncycastle.crypto.params.ECPrivateKeyParameters;
-import com.android.internal.org.bouncycastle.crypto.params.RSAKeyParameters;
-import com.android.internal.org.bouncycastle.crypto.signers.ECDSASigner;
-import com.android.internal.org.bouncycastle.crypto.signers.RSADigestSigner;
-import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.ec.BCECPrivateKey;
-import com.android.internal.org.bouncycastle.jcajce.provider.asymmetric.util.ECUtil;
-import com.android.internal.org.bouncycastle.jce.ECNamedCurveTable;
-import com.android.internal.org.bouncycastle.jce.spec.ECNamedCurveParameterSpec;
-import com.android.internal.org.bouncycastle.jce.spec.ECParameterSpec;
 import com.android.internal.org.bouncycastle.operator.ContentSigner;
-import com.android.internal.org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
+import com.android.internal.org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
+import com.android.internal.org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.math.BigInteger;
-import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
-import java.security.interfaces.ECPrivateKey;
-import java.security.interfaces.RSAPrivateCrtKey;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -169,111 +152,26 @@ public final class CertificateHacker {
         }
     }
 
-    private static ContentSigner createBCSigner(String algorithm, PrivateKey privateKey) throws Exception {
-        AlgorithmIdentifier sigAlgId = new DefaultSignatureAlgorithmIdentifierFinder().find(algorithm);
-
-        if (privateKey instanceof BCECPrivateKey) {
-            BCECPrivateKey bcKey = (BCECPrivateKey) privateKey;
-            ECParameterSpec ecSpec = bcKey.getParameters();
-            if (ecSpec != null) {
-                ECDomainParameters domainParams = new ECDomainParameters(
-                    ecSpec.getCurve(), ecSpec.getG(), ecSpec.getN(), ecSpec.getH());
-                ECPrivateKeyParameters keyParam = new ECPrivateKeyParameters(bcKey.getD(), domainParams);
-                return new ECContentSigner(sigAlgId, keyParam);
-            } else {
-                ECNamedCurveParameterSpec namedSpec = ECNamedCurveTable.getParameterSpec("secp256r1");
-                ECDomainParameters domainParams = new ECDomainParameters(
-                    namedSpec.getCurve(), namedSpec.getG(), namedSpec.getN(), namedSpec.getH());
-                ECPrivateKeyParameters keyParam = new ECPrivateKeyParameters(bcKey.getD(), domainParams);
-                return new ECContentSigner(sigAlgId, keyParam);
-            }
-        } else if (privateKey instanceof ECPrivateKey) {
-            ECPrivateKeyParameters keyParam = (ECPrivateKeyParameters) ECUtil.generatePrivateKeyParameter(privateKey);
-            return new ECContentSigner(sigAlgId, keyParam);
-        } else if (privateKey instanceof RSAPrivateCrtKey) {
-            RSAPrivateCrtKey rsaKey = (RSAPrivateCrtKey) privateKey;
-            RSAKeyParameters keyParam = new RSAKeyParameters(true, rsaKey.getModulus(), rsaKey.getPrivateExponent());
-            return new RSAContentSigner(sigAlgId, keyParam);
+    // The subject key and the original issuer can use different algorithms from
+    // the replacement issuer. Derive the signing primitive from the actual key.
+    static ContentSigner createBCSigner(String originalAlgorithm, PrivateKey privateKey)
+            throws Exception {
+        String digest = "SHA256";
+        String original = originalAlgorithm.toUpperCase(java.util.Locale.ROOT)
+                .replace("-", "");
+        if (original.startsWith("SHA384")) digest = "SHA384";
+        else if (original.startsWith("SHA512")) digest = "SHA512";
+        String keyAlgorithm = privateKey.getAlgorithm();
+        String algorithm;
+        if ("EC".equalsIgnoreCase(keyAlgorithm)) {
+            algorithm = digest + "withECDSA";
+        } else if ("RSA".equalsIgnoreCase(keyAlgorithm)) {
+            algorithm = digest + "withRSA";
+        } else {
+            throw new IllegalArgumentException("Unsupported issuer key algorithm: " + keyAlgorithm);
         }
-
-        throw new IllegalArgumentException("Unsupported key type: " + privateKey.getClass());
-    }
-
-    private static class ECContentSigner implements ContentSigner {
-        private final AlgorithmIdentifier algId;
-        private final ECPrivateKeyParameters keyParam;
-        private final ByteArrayOutputStream stream;
-
-        ECContentSigner(AlgorithmIdentifier algId, ECPrivateKeyParameters keyParam) {
-            this.algId = algId;
-            this.keyParam = keyParam;
-            this.stream = new ByteArrayOutputStream();
-        }
-
-        @Override
-        public AlgorithmIdentifier getAlgorithmIdentifier() {
-            return algId;
-        }
-
-        @Override
-        public OutputStream getOutputStream() {
-            return stream;
-        }
-
-        @Override
-        public byte[] getSignature() {
-            try {
-                byte[] data = stream.toByteArray();
-                MessageDigest digest = MessageDigest.getInstance("SHA-256");
-                byte[] hash = digest.digest(data);
-
-                ECDSASigner signer = new ECDSASigner();
-                signer.init(true, keyParam);
-                BigInteger[] sig = signer.generateSignature(hash);
-
-                ASN1EncodableVector v = new ASN1EncodableVector();
-                v.add(new ASN1Integer(sig[0]));
-                v.add(new ASN1Integer(sig[1]));
-                return new DERSequence(v).getEncoded();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to generate ECDSA signature", e);
-            }
-        }
-    }
-
-    private static class RSAContentSigner implements ContentSigner {
-        private final AlgorithmIdentifier algId;
-        private final RSAKeyParameters keyParam;
-        private final ByteArrayOutputStream stream;
-
-        RSAContentSigner(AlgorithmIdentifier algId, RSAKeyParameters keyParam) {
-            this.algId = algId;
-            this.keyParam = keyParam;
-            this.stream = new ByteArrayOutputStream();
-        }
-
-        @Override
-        public AlgorithmIdentifier getAlgorithmIdentifier() {
-            return algId;
-        }
-
-        @Override
-        public OutputStream getOutputStream() {
-            return stream;
-        }
-
-        @Override
-        public byte[] getSignature() {
-            try {
-                byte[] data = stream.toByteArray();
-                RSADigestSigner signer = new RSADigestSigner(new SHA256Digest());
-                signer.init(true, keyParam);
-                signer.update(data, 0, data.length);
-                return signer.generateSignature();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to generate RSA signature", e);
-            }
-        }
+        return new JcaContentSignerBuilder(algorithm)
+                .setProvider(new BouncyCastleProvider()).build(privateKey);
     }
 
     /**

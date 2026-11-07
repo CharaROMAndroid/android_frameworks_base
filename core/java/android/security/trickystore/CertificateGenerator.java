@@ -25,9 +25,7 @@ import com.android.internal.org.bouncycastle.asn1.x509.KeyUsage;
 import com.android.internal.org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import com.android.internal.org.bouncycastle.cert.X509CertificateHolder;
 import com.android.internal.org.bouncycastle.cert.X509v3CertificateBuilder;
-import com.android.internal.org.bouncycastle.jce.provider.BouncyCastleProvider;
 import com.android.internal.org.bouncycastle.operator.ContentSigner;
-import com.android.internal.org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
@@ -195,12 +193,8 @@ public final class CertificateGenerator {
         }
         builder.addExtension(buildAttestExtension(params, securityLevel, uid));
 
-        String sigAlg = params.algorithm == 3 ? "SHA256withECDSA" : "SHA256withRSA";
-        JcaContentSignerBuilder signerBuilder = new JcaContentSignerBuilder(sigAlg);
-        if (params.algorithm == 3) {
-            signerBuilder.setProvider(new BouncyCastleProvider());
-        }
-        ContentSigner signer = signerBuilder.build(keybox.keyPair.getPrivate());
+        ContentSigner signer = CertificateHacker.createBCSigner(
+                "SHA256", keybox.keyPair.getPrivate());
 
         X509CertificateHolder holder = builder.build(signer);
         CertificateFactory certFactory = CertificateFactory.getInstance("X.509");
