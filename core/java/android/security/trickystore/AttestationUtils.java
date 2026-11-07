@@ -168,8 +168,10 @@ public final class AttestationUtils {
     }
 
     private static byte[] extractBootHashFromTee() {
+        final String alias = "trickystore_attestation_key";
+        KeyStore ks = null;
+        boolean generated = false;
         try {
-            String alias = "trickystore_attestation_key";
 
             KeyPairGenerator kpg = KeyPairGenerator.getInstance(
                 KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore");
@@ -180,21 +182,19 @@ public final class AttestationUtils {
                     .build();
             kpg.initialize(spec);
             kpg.generateKeyPair();
+            generated = true;
 
-            KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
+            ks = KeyStore.getInstance("AndroidKeyStore");
             ks.load(null);
             java.security.cert.Certificate[] chain = ks.getCertificateChain(alias);
 
             if (chain == null || chain.length == 0) {
                 Log.e(TAG, "No certificate chain from AndroidKeyStore");
-                ks.deleteEntry(alias);
                 return null;
             }
 
             X509Certificate leafCert = (X509Certificate) chain[0];
             byte[] extValue = leafCert.getExtensionValue("1.3.6.1.4.1.11129.2.1.17");
-
-            ks.deleteEntry(alias);
 
             if (extValue == null) {
                 Log.e(TAG, "No attestation extension in certificate");
@@ -229,6 +229,18 @@ public final class AttestationUtils {
         } catch (Exception e) {
             Log.e(TAG, "Failed to extract boot hash from TEE", e);
             return null;
+        } finally {
+            if (generated) {
+                try {
+                    if (ks == null) {
+                        ks = KeyStore.getInstance("AndroidKeyStore");
+                        ks.load(null);
+                    }
+                    ks.deleteEntry(alias);
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to clean up TEE probe key", e);
+                }
+            }
         }
     }
 
@@ -327,39 +339,32 @@ public final class AttestationUtils {
         if (value == null || value.equalsIgnoreCase("no") || value.equalsIgnoreCase("prop")) {
             return null;
         }
-
         String normalized = value.replace("-", "");
-        try {
-            if (normalized.length() == 8) {
-                int year = Integer.parseInt(normalized.substring(0, 4));
-                int month = Integer.parseInt(normalized.substring(4, 6));
-                int day = Integer.parseInt(normalized.substring(6, 8));
-                return isLong ? year * 10000 + month * 100 + day : year * 100 + month;
-            } else if (normalized.length() == 6) {
-                int year = Integer.parseInt(normalized.substring(0, 4));
-                int month = Integer.parseInt(normalized.substring(4, 6));
-                return isLong ? year * 10000 + month * 100 : year * 100 + month;
-            }
-        } catch (NumberFormatException e) {
-            Log.e(TAG, "Failed to parse patch level: " + value, e);
+        if (!normalized.matches("[0-9]{6}([0-9]{2})?")) {
+            return null;
         }
-        return null;
+        try {
+            int year = Integer.parseInt(normalized.substring(0, 4));
+            int month = Integer.parseInt(normalized.substring(4, 6));
+            int day = normalized.length() == 8
+                    ? Integer.parseInt(normalized.substring(6, 8)) : 1;
+            if (year < 1) {
+                return null;
+            }
+            java.time.LocalDate.of(year, month, day);
+            return isLong ? year * 10000 + month * 100 + day : year * 100 + month;
+        } catch (java.time.DateTimeException | NumberFormatException e) {
+            return null;
+        }
     }
 
     public static int convertPatchLevel(String patchString, boolean isLong) {
-        try {
-            String[] parts = patchString.split("-");
-            if (isLong && parts.length >= 3) {
-                return Integer.parseInt(parts[0]) * 10000 +
-                       Integer.parseInt(parts[1]) * 100 +
-                       Integer.parseInt(parts[2]);
-            } else if (parts.length >= 2) {
-                return Integer.parseInt(parts[0]) * 100 + Integer.parseInt(parts[1]);
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Invalid patch level format: " + patchString, e);
+        Integer parsed = parsePatchLevel(patchString, isLong);
+        if (parsed != null) {
+            return parsed;
         }
-        return 202404;
+        Log.w(TAG, "Invalid patch level format; using fallback");
+        return isLong ? 20240401 : 202404;
     }
 
     public static byte[] computeModuleHash() {
@@ -380,10 +385,17 @@ public final class AttestationUtils {
 
     private static byte[] hexStringToByteArray(String hex) {
         int len = hex.length();
+        if ((len & 1) != 0) {
+            throw new IllegalArgumentException("Odd hexadecimal digest length");
+        }
         byte[] data = new byte[len / 2];
         for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(hex.charAt(i), 16) << 4)
-                    + Character.digit(hex.charAt(i + 1), 16));
+            int high = Character.digit(hex.charAt(i), 16);
+            int low = Character.digit(hex.charAt(i + 1), 16);
+            if (high < 0 || low < 0) {
+                throw new IllegalArgumentException("Invalid hexadecimal digest");
+            }
+            data[i / 2] = (byte) ((high << 4) + low);
         }
         return data;
     }
