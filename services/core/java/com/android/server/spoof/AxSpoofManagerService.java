@@ -15,7 +15,10 @@
  */
 package com.android.server.spoof;
 
+import android.Manifest;
 import android.app.ActivityManager;
+import android.content.pm.PackageManager;
+import android.os.Binder;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
@@ -246,6 +249,34 @@ public final class AxSpoofManagerService extends SystemService {
         }
     }
 
+    /**
+     * Read for the actual Binder caller, not the foreground user's cache. Capture
+     * identity before clearing it so SettingsProvider sees system_server only
+     * after the caller and its user have been established.
+     */
+    private String readTrickyStoreForCaller(String key, boolean containsPrivateKeys) {
+        final int uid = Binder.getCallingUid();
+        final int userId = UserHandle.getUserId(uid);
+        final boolean privileged = getContext().checkPermission(
+                Manifest.permission.WRITE_SECURE_SETTINGS, Binder.getCallingPid(), uid)
+                == PackageManager.PERMISSION_GRANTED;
+        final long token = Binder.clearCallingIdentity();
+        try {
+            if (containsPrivateKeys && !privileged) {
+                final String[] packages = getContext().getPackageManager().getPackagesForUid(uid);
+                final String targets = Settings.Secure.getStringForUser(
+                        mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET, userId);
+                if (!TrickyStoreAccessPolicy.isAllowed(targets, packages,
+                        TrickyStoreService.XPOSED_PACKAGES)) {
+                    return null;
+                }
+            }
+            return Settings.Secure.getStringForUser(mResolver, key, userId);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
     private final class LocalService implements AxSpoofManagerInternal {
         @Override
         public String getPifConfig() {
@@ -264,17 +295,17 @@ public final class AxSpoofManagerService extends SystemService {
 
         @Override
         public String getTrickyStoreTarget() {
-            return getCached(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+            return readTrickyStoreForCaller(Settings.Secure.SPOOF_TRICKYSTORE_TARGET, false);
         }
 
         @Override
         public String getTrickyStoreKeyBox() {
-            return getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX);
+            return readTrickyStoreForCaller(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, true);
         }
 
         @Override
         public String getTrickyStorePatch() {
-            return getCached(Settings.Secure.SPOOF_TRICKYSTORE_PATCH);
+            return readTrickyStoreForCaller(Settings.Secure.SPOOF_TRICKYSTORE_PATCH, false);
         }
     }
 }
