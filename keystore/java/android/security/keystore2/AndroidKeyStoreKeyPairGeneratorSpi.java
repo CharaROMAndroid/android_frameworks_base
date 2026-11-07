@@ -825,8 +825,15 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
             KeyMetadata metadata = null;
             boolean needGenerate = false;
             String[] packages = null;
-            if (!"TrickyStoreTeeCheck".equals(mEntryAlias) &&
-                !"trickystore_attestation_key".equals(mEntryAlias)) {
+            // Unsupported issuer claims must remain on native KeyMint, before any
+            // software subject key is generated or imported.
+            if (!mSpec.isStrongBoxBacked() &&
+                !mSpec.isDevicePropertiesAttestationIncluded() &&
+                mSpec.getAttestationChallenge() != null &&
+                mSpec.getAttestationChallenge().length > 0 &&
+                mSpec.getAttestationChallenge().length <= 128 &&
+                !mEntryAlias.startsWith("TrickyStoreTeeCheck") &&
+                !mEntryAlias.startsWith("trickystore_attestation_key")) {
                 try {
                     packages = ActivityThread.getPackageManager().getPackagesForUid(Process.myUid());
                     if (TrickyStoreService.getInstance()

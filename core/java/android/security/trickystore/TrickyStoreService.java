@@ -117,7 +117,34 @@ public class TrickyStoreService {
     );
     private volatile String mLastKeyboxFingerprint = null;
 
-    private final KeyBoxManager mKeyBoxManager;
+    private KeyBoxManager mKeyBoxManager;
+    private static final ThreadLocal<TrickyStoreService> SERVER_CONFIG = new ThreadLocal<>();
+
+    /** System-server request-scoped config. Never used for application key imports. */
+    public static void setServerConfig(String targets, String patch, KeyBoxManager manager) {
+        if (android.os.Process.myUid() != android.os.Process.SYSTEM_UID) {
+            throw new SecurityException("system_server only");
+        }
+        if (manager == null) { SERVER_CONFIG.remove(); return; }
+        TrickyStoreService config = new TrickyStoreService();
+        config.mKeyBoxManager = manager;
+        if (targets != null) {
+            try {
+                if (targets.trim().startsWith("[")) config.parseTargetsJson(targets);
+                else config.parseTargetsText(targets);
+            } catch (Exception e) { throw new IllegalArgumentException("Invalid targets"); }
+        }
+        if (patch != null) {
+            try {
+                if (patch.trim().startsWith("{")) config.parsePatchJson(patch);
+                else config.parsePatchText(patch);
+            } catch (Exception e) { throw new IllegalArgumentException("Invalid patch config"); }
+        }
+        SERVER_CONFIG.set(config);
+    }
+
+    public Mode configuredMode(String pkg) { return mPackageModes.get(pkg); }
+
 
     /** @hide */
     public enum Mode {
@@ -140,10 +167,11 @@ public class TrickyStoreService {
     }
 
     private TrickyStoreService() {
-        mKeyBoxManager = new KeyBoxManager();
+        // Issuer keys are held exclusively by the system-side signer.
     }
 
     public static synchronized TrickyStoreService getInstance() {
+        if (SERVER_CONFIG.get() != null) return SERVER_CONFIG.get();
         if (sInstance == null) {
             sInstance = new TrickyStoreService();
             sInstance.initialize();
@@ -261,67 +289,11 @@ public class TrickyStoreService {
         }
     }
 
-    public void refreshKeyBox() {
-        String raw = fetchFromAms(am -> am.getSpoofTrickyStoreKeyBox());
-        if (raw == null || raw.isEmpty()) {
-            mKeyBoxManager.clear();
-            mLastKeyboxFingerprint = null;
-            return;
-        }
-        String fingerprint = Integer.toHexString(raw.hashCode()) + ":" + raw.length();
-        if (fingerprint.equals(mLastKeyboxFingerprint)) {
-            return;
-        }
-        String xml = decodeKeybox(raw);
-        if (xml == null) {
-            Log.e(TAG, "Keybox payload not recognised as XML or base64-encoded XML");
-            return;
-        }
-        try {
-            if (!isValidKeyboxXml(xml)) {
-                mLastKeyboxFingerprint = null;
-                Log.e(TAG, "Keybox XML failed structural validation (missing keys or identifier)");
-                return;
-            }
-            if (ENABLE_REVOCATION_CHECK) {
-                checkKeyboxRevocation(xml);
-            }
-            if (!mKeyBoxManager.parseKeybox(xml)) {
-                // Rejected as incomplete: the previous keyboxes stay loaded. Don't record
-                // this payload as applied, so the next read looks at it again.
-                mLastKeyboxFingerprint = null;
-                return;
-            }
-            if (mKeyBoxManager.hasKeyboxes()) {
-                mLastKeyboxFingerprint = fingerprint;
-                Log.i(TAG, "Keybox updated successfully");
-            } else {
-                mLastKeyboxFingerprint = null;
-                Log.e(TAG, "Keybox parse produced no usable entries");
-            }
-        } catch (Exception e) {
-            mLastKeyboxFingerprint = null;
-            Log.e(TAG, "Failed to update keybox", e);
-        }
-    }
-
-    private String decodeKeybox(String payload) {
-        String trimmed = payload.trim();
-        if (trimmed.startsWith("<")) {
-            return trimmed;
-        }
-        try {
-            byte[] decoded = Base64.getDecoder().decode(trimmed);
-            String asXml = new String(decoded, StandardCharsets.UTF_8).trim();
-            if (asXml.startsWith("<")) {
-                return asXml;
-            }
-        } catch (IllegalArgumentException ignored) {
-        }
-        return null;
-    }
+    public void refreshKeyBox() { /* Compatibility no-op; no issuer key IPC. */ }
 
     public void refreshPatchLevel() {
+        if (SERVER_CONFIG.get() == this) return;
+        mCustomPatchLevel = null;
         String content = fetchFromAms(am -> am.getSpoofTrickyStorePatch());
         mPerPackagePatchLevels.clear();
         if (content == null || content.isEmpty()) {
@@ -463,151 +435,13 @@ public class TrickyStoreService {
         }
     }
 
-    private boolean isValidKeyboxXml(String xml) {
-        boolean hasEcdsa = xml.contains("<Key algorithm=\"ecdsa\">");
-        boolean hasRsa = xml.contains("<Key algorithm=\"rsa\">");
-        boolean hasId = xml.contains("<serial>") || xml.contains("DeviceID");
-        if (!hasEcdsa && !hasRsa) {
-            Log.e(TAG, "Keybox validation failed: no ECDSA or RSA key block found");
-            return false;
-        }
-        if (!hasId) {
-            Log.e(TAG, "Keybox validation failed: no identifier field (serial/DeviceID)");
-            return false;
-        }
-        if (!hasEcdsa) Log.w(TAG, "Keybox warning: missing ECDSA key block");
-        if (!hasRsa)   Log.w(TAG, "Keybox warning: missing RSA key block");
-        return true;
-    }
-
-    private void checkKeyboxRevocation(String xml) {
-        long now = System.currentTimeMillis();
-        if (now - mLastRevocationCheckMs < REVOCATION_CHECK_COOLDOWN_MS) {
-            Log.d(TAG, "Skipping revocation check — ran within 24h");
-            return;
-        }
-        new Thread(() -> {
-            try {
-                List<String> serials = extractCertSerials(xml);
-                if (serials.isEmpty()) return;
-                java.net.URL url = new java.net.URL(
-                        "https://android.googleapis.com/attestation/status?encrypted=0");
-                java.net.HttpURLConnection conn =
-                        (java.net.HttpURLConnection) url.openConnection();
-                conn.setConnectTimeout(10_000);
-                conn.setReadTimeout(10_000);
-                if (conn.getResponseCode() != java.net.HttpURLConnection.HTTP_OK) {
-                    checkCachedRevocation(serials);
-                    return;
-                }
-                String body = new String(
-                        conn.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-                org.json.JSONObject entries =
-                        new org.json.JSONObject(body).optJSONObject("entries");
-                if (entries == null) return;
-                for (String serial : serials) {
-                    org.json.JSONObject entry = entries.optJSONObject(serial);
-                    if (entry == null) continue;
-                    String status = entry.optString("status", "").toUpperCase(java.util.Locale.US);
-                    if ("REVOKED".equals(status) || "SUSPENDED".equals(status)) {
-                        Log.w(TAG, "Keybox serial " + serial + " is " + status +
-                                " — attestation may fail");
-                        writeCachedRevokedSerial(serial);
-                    }
-                }
-                mLastRevocationCheckMs = now;
-            } catch (Exception e) {
-                Log.w(TAG, "Keybox revocation check failed, trying offline cache", e);
-                try {
-                    checkCachedRevocation(extractCertSerials(xml));
-                } catch (Exception inner) {
-                    Log.w(TAG, "Offline revocation cache check also failed", inner);
-                }
-            }
-        }, "TrickyStore-RevocationCheck").start();
-    }
-
-    /**
-     * Writes [serial] to a small private cache file so a later network
-     * failure can still flag it. Downgrade-only: this cache is only ever
-     * consulted to log a warning, never to assert a keybox is safe.
-     */
-    private void writeCachedRevokedSerial(String serial) {
-        try {
-            REVOCATION_CACHE_FILE.getParentFile().mkdirs();
-            org.json.JSONObject obj = new org.json.JSONObject();
-            obj.put("serial", serial);
-            obj.put("cachedAt", System.currentTimeMillis());
-            try (java.io.FileWriter fw = new java.io.FileWriter(REVOCATION_CACHE_FILE)) {
-                fw.write(obj.toString());
-            }
-            android.system.Os.chmod(REVOCATION_CACHE_FILE.getAbsolutePath(), 0600);
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to write revocation cache", e);
-        }
-    }
-
-    /**
-     * Logging-only fallback used when the live revocation fetch fails.
-     * Reads the cached bad serial, if any, and logs a warning if it matches
-     * one of the current keybox's serials and the cache is still within the
-     * trust window. Never mutates keybox state — that decision stays with
-     * the Settings UI layer.
-     */
-    private void checkCachedRevocation(List<String> serials) {
-        if (!REVOCATION_CACHE_FILE.exists()) return;
-        try {
-            String content = new String(
-                java.nio.file.Files.readAllBytes(REVOCATION_CACHE_FILE.toPath()),
-                StandardCharsets.UTF_8);
-            org.json.JSONObject obj = new org.json.JSONObject(content);
-            long cachedAt = obj.optLong("cachedAt", 0L);
-            if (cachedAt == 0L ||
-                System.currentTimeMillis() - cachedAt > CACHE_TRUST_WINDOW_MS) {
-                return;
-            }
-            String cachedSerial = obj.optString("serial", "");
-            if (!cachedSerial.isEmpty() && serials.contains(cachedSerial)) {
-                Log.w(TAG, "Keybox serial " + cachedSerial +
-                        " was cached as revoked/suspended (offline fallback,"
-                        + " live check unavailable)");
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to read revocation cache", e);
-        }
-    }
-
-    private List<String> extractCertSerials(String xml) {
-        List<String> serials = new ArrayList<>();
-        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
-                "-----BEGIN CERTIFICATE-----([\\s\\S]+?)-----END CERTIFICATE-----");
-        java.util.regex.Matcher m = p.matcher(xml);
-        java.security.cert.CertificateFactory factory;
-        try {
-            factory = java.security.cert.CertificateFactory.getInstance("X.509");
-        } catch (Exception e) {
-            return serials;
-        }
-        while (m.find()) {
-            try {
-                byte[] der = Base64.getDecoder().decode(
-                        m.group(1).replaceAll("\\s", ""));
-                java.security.cert.X509Certificate cert =
-                        (java.security.cert.X509Certificate)
-                        factory.generateCertificate(
-                                new java.io.ByteArrayInputStream(der));
-                // Google's revocation list spells 128-bit serials as lowercase hex without
-                // leading zeros and the old 64-bit ones as decimal, so look up both.
-                serials.add(cert.getSerialNumber().toString(16));
-                serials.add(cert.getSerialNumber().toString());
-            } catch (Exception ignored) {}
-        }
-        return serials;
-    }
-
     private boolean checkTeeBroken() {
+        // Retain the recognized internal prefix while avoiding an app-owned alias.
+        String alias = "TrickyStoreTeeCheck-" + java.util.UUID.randomUUID();
+        KeyStore ks = null;
         try {
-            String alias = "TrickyStoreTeeCheck";
+            ks = KeyStore.getInstance("AndroidKeyStore");
+            ks.load(null);
             KeyPairGenerator kpg = KeyPairGenerator.getInstance(
                     KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore");
             KeyGenParameterSpec.Builder builder = new KeyGenParameterSpec.Builder(
@@ -615,19 +449,15 @@ public class TrickyStoreService {
                     .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
                     .setDigests(KeyProperties.DIGEST_SHA256)
                     .setAttestationChallenge(new byte[16]);
-
             kpg.initialize(builder.build());
             kpg.generateKeyPair();
-
-            KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-            ks.load(null);
-            ks.deleteEntry(alias);
-
-            Log.i(TAG, "TEE verification successful");
             return false;
         } catch (Exception e) {
-            Log.w(TAG, "TEE verification failed, TEE is broken", e);
             return true;
+        } finally {
+            if (ks != null) {
+                try { ks.deleteEntry(alias); } catch (Exception ignored) { }
+            }
         }
     }
 
@@ -668,8 +498,7 @@ public class TrickyStoreService {
     }
 
     public KeyBoxManager getKeyBoxManager() {
-        refreshKeyBox();
-        return mKeyBoxManager;
+        return SERVER_CONFIG.get() == this ? mKeyBoxManager : null;
     }
 
     public CustomPatchLevel getCustomPatchLevel() {
@@ -682,7 +511,14 @@ public class TrickyStoreService {
         if (packages != null) {
             for (String pkg : packages) {
                 CustomPatchLevel level = mPerPackagePatchLevels.get(pkg);
-                if (level != null) return level;
+                if (level != null) {
+                    CustomPatchLevel global = mCustomPatchLevel;
+                    return new CustomPatchLevel(
+                        level.system != null ? level.system : global == null ? null : global.system,
+                        level.vendor != null ? level.vendor : global == null ? null : global.vendor,
+                        level.boot != null ? level.boot : global == null ? null : global.boot,
+                        level.all != null ? level.all : global == null ? null : global.all);
+                }
             }
         }
         return mCustomPatchLevel;
@@ -709,7 +545,8 @@ public class TrickyStoreService {
     }
 
     public boolean hasKeyboxes() {
-        return mKeyBoxManager.hasKeyboxes();
+        try { return ActivityManager.getService().hasTrickyStoreKeyboxes(); }
+        catch (Exception e) { return false; }
     }
 
     /**
@@ -719,5 +556,45 @@ public class TrickyStoreService {
     public boolean isTeeBroken() {
         ensureTeeStatus();
         return Boolean.TRUE.equals(mTeeBroken);
+    }
+
+    public List<java.security.cert.Certificate> requestCertificateChain(
+            java.security.PublicKey key, CertificateGenerator.KeyGenParameters p, int level) {
+        try {
+            android.os.Bundle b = new android.os.Bundle();
+            b.putInt("level", level);
+            if (p.certificateSubject != null) b.putByteArray("subject", p.certificateSubject.getEncoded());
+            if (p.certificateSerial != null) b.putByteArray("serial", p.certificateSerial.toByteArray());
+            if (p.certificateNotBefore != null) b.putLong("notBefore", p.certificateNotBefore.getTime());
+            if (p.certificateNotAfter != null) b.putLong("notAfter", p.certificateNotAfter.getTime());
+            b.putByteArray("challenge", p.attestationChallenge);
+            b.putIntegerArrayList("purpose", new ArrayList<>(p.purpose));
+            b.putIntegerArrayList("digest", new ArrayList<>(p.digest));
+            b.putIntegerArrayList("padding", new ArrayList<>(p.padding));
+            b.putIntegerArrayList("mgfDigest", new ArrayList<>(p.rsaOaepMgfDigest));
+            byte[] encoded = ActivityManager.getService().signTrickyStoreCertificate(
+                    key.getEncoded(), key.getAlgorithm(), b);
+            if (encoded == null) return null;
+            return new ArrayList<>(java.security.cert.CertificateFactory.getInstance("X.509")
+                .generateCertificates(new java.io.ByteArrayInputStream(encoded)));
+        } catch (Exception e) { return null; }
+    }
+
+    public java.security.cert.Certificate[] requestRewrittenChain(
+            java.security.cert.Certificate[] chain) {
+        if (chain == null || chain.length == 0 || chain.length > 8) return chain;
+        try {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            for (var cert : chain) {
+                byte[] der = cert.getEncoded();
+                if (der.length > 16384 || out.size() + der.length > 65536) return chain;
+                out.write(der);
+            }
+            byte[] encoded = ActivityManager.getService().rewriteTrickyStoreCertificateChain(out.toByteArray());
+            if (encoded == null) return chain;
+            var result = java.security.cert.CertificateFactory.getInstance("X.509")
+                .generateCertificates(new java.io.ByteArrayInputStream(encoded));
+            return result.toArray(new java.security.cert.Certificate[0]);
+        } catch (Exception e) { return chain; }
     }
 }
