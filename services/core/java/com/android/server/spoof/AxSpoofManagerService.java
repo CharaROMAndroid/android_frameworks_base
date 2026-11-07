@@ -15,9 +15,7 @@
  */
 package com.android.server.spoof;
 
-import android.Manifest;
 import android.app.ActivityManager;
-import android.content.pm.PackageManager;
 import android.os.Binder;
 import android.content.ContentResolver;
 import android.content.Context;
@@ -257,20 +255,13 @@ public final class AxSpoofManagerService extends SystemService {
     private String readTrickyStoreForCaller(String key, boolean containsPrivateKeys) {
         final int uid = Binder.getCallingUid();
         final int userId = UserHandle.getUserId(uid);
-        final boolean privileged = getContext().checkPermission(
-                Manifest.permission.WRITE_SECURE_SETTINGS, Binder.getCallingPid(), uid)
-                == PackageManager.PERMISSION_GRANTED;
+        // Raw private keys never cross the system UID boundary. Settings
+        // imports/manages the keybox through its protected Secure setting.
+        if (containsPrivateKeys && uid != Process.SYSTEM_UID) {
+            return null;
+        }
         final long token = Binder.clearCallingIdentity();
         try {
-            if (containsPrivateKeys && !privileged) {
-                final String[] packages = getContext().getPackageManager().getPackagesForUid(uid);
-                final String targets = Settings.Secure.getStringForUser(
-                        mResolver, Settings.Secure.SPOOF_TRICKYSTORE_TARGET, userId);
-                if (!TrickyStoreAccessPolicy.isAllowed(targets, packages,
-                        TrickyStoreService.XPOSED_PACKAGES)) {
-                    return null;
-                }
-            }
             return Settings.Secure.getStringForUser(mResolver, key, userId);
         } finally {
             Binder.restoreCallingIdentity(token);
