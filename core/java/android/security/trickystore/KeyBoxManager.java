@@ -62,7 +62,7 @@ public class KeyBoxManager {
 
     public void clear() {
         mKeyboxes.clear();
-        Log.i(TAG, "Keyboxes cleared");
+
     }
 
     public boolean hasKeyboxes() {
@@ -84,7 +84,9 @@ public class KeyBoxManager {
         // Parse into a private map and publish it at the end, so a concurrent
         // attestation never sees a half-filled or empty keybox mid-refresh.
         Map<String, KeyBox> next = new ConcurrentHashMap<>();
-        if (xmlContent == null || xmlContent.isEmpty()) {
+        if (xmlContent == null || xmlContent.isEmpty() || xmlContent.length() > 1024 * 1024
+                || xmlContent.toUpperCase(java.util.Locale.ROOT).contains("<!DOCTYPE")
+                || xmlContent.toUpperCase(java.util.Locale.ROOT).contains("<!ENTITY")) {
             return false;
         }
 
@@ -214,28 +216,18 @@ public class KeyBoxManager {
             // NumberOfKeyboxes is advisory. Generators disagree on what it counts (the
             // <Keybox> wrappers or the <Key> elements) and some write a value that matches
             // neither, which TEESimulator-RS and AlwaysStrong accept as well: they iterate
-            // every <Key> they find. So a mismatch is only logged. A truncated download is
+            // every <Key> they find. So a mismatch does not reject otherwise valid keys. A truncated download is
             // caught by the parse failure below, and a document that yields no key at all
             // is still rejected so it can't wipe the loaded keyboxes.
             if (next.isEmpty()) {
-                Log.e(TAG, "Keybox XML declares " + declaredKeyboxCount
-                        + " keybox(es) but no complete key parsed — rejecting, keeping the"
-                        + " current keyboxes");
+
                 return false;
             }
-            if (declaredKeyboxCount != null
-                    && declaredKeyboxCount != parsedKeyboxCount
-                    && declaredKeyboxCount != parsedKeyCount) {
-                Log.w(TAG, "Keybox XML declares " + declaredKeyboxCount + " keybox(es), parsed "
-                        + parsedKeyboxCount + " box(es) / " + parsedKeyCount
-                        + " key(s); NumberOfKeyboxes is advisory, using what parsed");
-            }
-
             mKeyboxes = next;
-            Log.i(TAG, "Parsed " + next.size() + " keyboxes");
+
             return true;
         } catch (Exception e) {
-            Log.e(TAG, "Failed to parse keybox XML", e);
+
             // Never publish partially parsed data, including trailing malformed XML.
             return false;
         }
@@ -301,11 +293,11 @@ public class KeyBoxManager {
                 }
                 KeyPair keyPair = new KeyPair(publicKey, privateKey);
                 target.put(normalizedAlgorithm, new KeyBox(keyPair, certificates));
-                Log.i(TAG, "Added keybox for algorithm: " + normalizedAlgorithm);
+
                 return true;
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to process keybox for algorithm: " + algorithm, e);
+
         }
         return false;
     }
