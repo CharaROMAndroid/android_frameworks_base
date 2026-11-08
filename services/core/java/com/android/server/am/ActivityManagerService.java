@@ -21278,6 +21278,21 @@ public class ActivityManagerService extends IActivityManager.Stub
     }
 
     @Override
+    public byte[] signTrickyStoreCertificate(byte[] publicKey, String algorithm, Bundle metadata) {
+        return com.android.server.spoof.TrickyStoreSigner.sign(mContext, publicKey, algorithm, metadata);
+    }
+
+    @Override
+    public byte[] rewriteTrickyStoreCertificateChain(byte[] chain) {
+        return com.android.server.spoof.TrickyStoreSigner.rewrite(mContext, chain);
+    }
+
+    @Override
+    public boolean hasTrickyStoreKeyboxes() {
+        return com.android.server.spoof.TrickyStoreSigner.available(mContext);
+    }
+
+    @Override
     public String getSpoofTrickyStoreTarget() {
         final AxSpoofManagerInternal service = getAxSpoofManager();
         return service != null ? service.getTrickyStoreTarget() : null;

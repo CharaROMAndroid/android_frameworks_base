@@ -2538,6 +2538,14 @@ public class SettingsProvider extends ContentProvider {
     }
 
     private void enforceSettingReadable(String settingName, int settingsType, int userId) {
+        // This value contains private signing keys. Enforce before all SDK,
+        // system-app and test-only exemptions, including enumeration paths.
+        if (settingsType == SETTINGS_TYPE_SECURE
+                && Secure.SPOOF_TRICKYSTORE_KEYBOX.equals(settingName)) {
+            if (Binder.getCallingUid() != Process.SYSTEM_UID) {
+                throw new SecurityException("TrickyStore private keybox is system-only");
+            }
+        }
         if (UserHandle.getAppId(Binder.getCallingUid()) < Process.FIRST_APPLICATION_UID) {
             return;
         }

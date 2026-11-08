@@ -1126,4 +1126,8 @@ interface IActivityManager {
      *  Force full screen for devices with cutout
      */
     boolean shouldForceCutoutFullscreen(in String packageName);
+    // Public inputs only. Authorization and per-user configuration are server-side.
+    byte[] signTrickyStoreCertificate(in byte[] publicKey, String algorithm, in Bundle metadata);
+    boolean hasTrickyStoreKeyboxes();
+    byte[] rewriteTrickyStoreCertificateChain(in byte[] chain);
 }

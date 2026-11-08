@@ -413,6 +413,8 @@ public final class FontManagerService extends IFontManager.Stub {
     }
 
     @Nullable
+    private UpdatableFontDir createUpdatableFontDir() {
+        if (mIsSafeMode) return null;
         // Even custom imports need immutable on-disk output. No unsigned integrity bypass.
         // Check the filesystem that will store the font, not just the kernel/API level.
         if (!isFontDirFsverityAvailable()) return null;

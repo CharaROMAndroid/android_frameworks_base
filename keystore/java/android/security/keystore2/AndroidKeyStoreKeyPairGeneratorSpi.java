@@ -834,13 +834,23 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
             // attest-key-rooted chains and internal hardware probes must follow
             // the stock Keystore path.
             final boolean eligible = mSpec.getAttestationChallenge() != null
+                    && mSpec.getAttestationChallenge().length > 0
+                    && mSpec.getAttestationChallenge().length <= 128
+                    && !mSpec.isDevicePropertiesAttestationIncluded()
+                    && !mSpec.isUniqueIdIncluded()
+                    && (mSpec.getAttestationIds() == null || mSpec.getAttestationIds().length == 0)
+                    && ((mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_EC
+                            && (mKeySizeBits == 256 || mKeySizeBits == 384 || mKeySizeBits == 521))
+                        || (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_RSA
+                            && mKeySizeBits >= 2048 && mKeySizeBits <= 4096
+                            && (mRSAPublicExponent == null || mRSAPublicExponent == 65537L)))
                     && !mSpec.isStrongBoxBacked()
                     && (mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_EC
                         || mKeymasterAlgorithm == KeymasterDefs.KM_ALGORITHM_RSA)
                     && mAttestKeyDescriptor == null
                     && !isCurve25519(mEcCurveName)
-                    && !"TrickyStoreTeeCheck".equals(mEntryAlias)
-                    && !"trickystore_attestation_key".equals(mEntryAlias);
+                    && !mEntryAlias.startsWith("TrickyStoreTeeCheck")
+                    && !mEntryAlias.startsWith("trickystore_attestation_key");
             if (eligible) {
                 try {
                     if (ActivityThread.getPackageManager() != null) {

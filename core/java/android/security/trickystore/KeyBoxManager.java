@@ -108,11 +108,17 @@ public class KeyBoxManager {
      *
      * @return false if the document was rejected as incomplete, true otherwise
      */
+    private static boolean unsafeXml(String xml) {
+        if (xml == null || xml.trim().isEmpty() || xml.length() > 1024 * 1024) return true;
+        String upper = xml.toUpperCase(Locale.ROOT);
+        return upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY");
+    }
+
     public boolean parseKeybox(String xmlContent) {
         // Parse into a private map and publish it at the end, so a concurrent
         // attestation never sees a half-filled or empty keybox mid-refresh.
         // Do not let an accidental null/empty fetch erase a valid configuration.
-        if (xmlContent == null || xmlContent.trim().isEmpty()) {
+        if (unsafeXml(xmlContent)) {
             Log.w(TAG, "Rejecting empty keybox document");
             return false;
         }
@@ -129,7 +135,7 @@ public class KeyBoxManager {
      * writing files. Returns null when it can be loaded, a reason otherwise.
      */
     public static String validate(String xmlContent) {
-        if (xmlContent == null || xmlContent.trim().isEmpty()) return "Keybox is empty";
+        if (unsafeXml(xmlContent)) return "Keybox is empty";
         Map<String, KeyBox> checked = new java.util.HashMap<>();
         return new KeyBoxManager().parseInto(checked, xmlContent)
                 ? null : "Keybox is incomplete or contains invalid key material";

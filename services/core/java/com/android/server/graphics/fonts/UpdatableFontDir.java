@@ -283,7 +283,7 @@ final class UpdatableFontDir {
                 // Verify before any native metadata parsing of the file.
                 FontFileInfo fontFileInfo = validateFontFile(fontFile, signature);
                 if (isCustomFont
-                        && !Objects.equals(activeCustomFont, mParser.getPostScriptName(fontFile))) {
+                        && !Objects.equals(activeCustomFont, fontFileInfo.getPostScriptName())) {
                     FileUtils.deleteContentsAndDir(dir);
                     continue;
                 }
@@ -842,7 +842,7 @@ final class UpdatableFontDir {
                 }
             }
             FontFileInfo fontFileInfo = validateFontFile(
-                    newFontFile, pkcs7Signature, isCustomFont);
+                    newFontFile, pkcs7Signature);
 
             // Try to create Typeface and treat as failure something goes wrong.
             try {

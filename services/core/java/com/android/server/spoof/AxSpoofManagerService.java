@@ -16,6 +16,7 @@
 package com.android.server.spoof;
 
 import android.app.ActivityManager;
+import android.os.Binder;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
@@ -246,6 +247,27 @@ public final class AxSpoofManagerService extends SystemService {
         }
     }
 
+    /**
+     * Read for the actual Binder caller, not the foreground user's cache. Capture
+     * identity before clearing it so SettingsProvider sees system_server only
+     * after the caller and its user have been established.
+     */
+    private String readTrickyStoreForCaller(String key, boolean containsPrivateKeys) {
+        final int uid = Binder.getCallingUid();
+        final int userId = UserHandle.getUserId(uid);
+        // Raw private keys never cross the system UID boundary. Settings
+        // imports/manages the keybox through its protected Secure setting.
+        if (containsPrivateKeys && uid != Process.SYSTEM_UID) {
+            return null;
+        }
+        final long token = Binder.clearCallingIdentity();
+        try {
+            return Settings.Secure.getStringForUser(mResolver, key, userId);
+        } finally {
+            Binder.restoreCallingIdentity(token);
+        }
+    }
+
     private final class LocalService implements AxSpoofManagerInternal {
         @Override
         public String getPifConfig() {
@@ -264,17 +286,17 @@ public final class AxSpoofManagerService extends SystemService {
 
         @Override
         public String getTrickyStoreTarget() {
-            return getCached(Settings.Secure.SPOOF_TRICKYSTORE_TARGET);
+            return readTrickyStoreForCaller(Settings.Secure.SPOOF_TRICKYSTORE_TARGET, false);
         }
 
         @Override
         public String getTrickyStoreKeyBox() {
-            return getCached(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX);
+            return readTrickyStoreForCaller(Settings.Secure.SPOOF_TRICKYSTORE_KEYBOX, true);
         }
 
         @Override
         public String getTrickyStorePatch() {
-            return getCached(Settings.Secure.SPOOF_TRICKYSTORE_PATCH);
+            return readTrickyStoreForCaller(Settings.Secure.SPOOF_TRICKYSTORE_PATCH, false);
         }
     }
 }

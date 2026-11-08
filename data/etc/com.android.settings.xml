@@ -16,6 +16,7 @@
   -->
 <permissions>
     <privapp-permissions package="com.android.settings">
+        <permission name="android.permission.UPDATE_FONTS"/>
         <permission name="android.permission.ACCESS_CHECKIN_PROPERTIES"/>
         <permission name="android.permission.ACCESS_NOTIFICATIONS"/>
         <permission name="android.permission.BACKUP"/>
