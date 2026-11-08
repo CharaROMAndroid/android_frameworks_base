@@ -2862,6 +2862,10 @@ public class ComputerEngine implements Computer {
         if (isCallerSameApp(ps.getPackageName(), callingUid)) {
             return false;
         }
+        // Apply before instant-app visibility shortcuts as well as AppsFilter's cache path.
+        if (CharaAppListPolicy.shouldFilter(this, callingUid, ps)) {
+            return true;
+        }
         if (callerIsInstantApp) {
             // both caller and target are both instant, but, different applications, filter
             if (ps.getUserStateOrDefault(userId).isInstantApp()) {

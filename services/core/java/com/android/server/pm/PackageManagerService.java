@@ -4510,6 +4510,8 @@ public class PackageManagerService implements PackageSender, TestUtilityService 
             mReleaseOnSystemReady = null;
         }
 
+        CharaAppListPolicy.start(mContext, mHandler);
+
         mSystemReady = true;
 
         // Initialize Application Shared Memory isDeviceUpgrading flag.
