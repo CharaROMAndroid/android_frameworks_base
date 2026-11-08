@@ -260,6 +260,8 @@ public final class AttestationUtils {
 
     public static int getAttestVersion() {
         switch (Build.VERSION.SDK_INT) {
+            case 37: // Android 17, KeyMint 5.
+                return 500;
             case Build.VERSION_CODES.Q:
             case Build.VERSION_CODES.R:
                 return 4;
