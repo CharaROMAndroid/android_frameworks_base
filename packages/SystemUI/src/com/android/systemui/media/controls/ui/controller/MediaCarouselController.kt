@@ -524,21 +524,15 @@ constructor(
         return scope.launch {
             keyguardTransitionInteractor
                 .transition(Edge.create(to = LOCKSCREEN))
-                //ZTE_DEVELOP_BEGIN
-                /*.filter { it.transitionState == TransitionState.FINISHED }
+                .filter {
+                    it.transitionState == TransitionState.STARTED ||
+                        it.transitionState == TransitionState.FINISHED
+                }
                 .collect {
                     if (!allowMediaPlayerOnLockScreen) {
                         updateHostVisibility()
                     }
-                }*/
-                .collect { step ->
-                    if (step.transitionState == TransitionState.STARTED || step.transitionState == TransitionState.FINISHED) {
-                        if (!allowMediaPlayerOnLockScreen) {
-                            updateHostVisibility()
-                        }
-                    }
                 }
-                //ZTE_DEVELOP_END
         }
     }
 
