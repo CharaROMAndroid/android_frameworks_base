@@ -177,7 +177,7 @@ public class DemoStatusIcons extends StatusIconContainer implements DemoMode, Da
         }
         String alarm = args.getString("alarm");
         if (alarm != null) {
-            int iconId = alarm.equals("show") ? R.drawable.stat_sys_alarm
+            int iconId = alarm.equals("show") ? R.drawable.ic_alarm
                     : 0;
             updateSlot("alarm_clock", null, iconId);
         }

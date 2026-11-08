@@ -52,7 +52,7 @@ constructor(@Assisted context: Context, interactor: NextAlarmInteractor) :
     private fun Boolean.toUiState(): Icon? =
         if (this) {
             Icon.Resource(
-                resId = R.drawable.stat_sys_alarm,
+                resId = R.drawable.ic_alarm,
                 contentDescription = ContentDescription.Resource(R.string.status_bar_alarm),
             )
         } else {
