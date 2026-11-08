@@ -501,6 +501,10 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
                 return false;
             }
             final Computer computer = (Computer) snapshot;
+            // Caller restriction is stronger than query-all/manifest visibility and cache grants.
+            if (CharaAppListPolicy.shouldFilter(computer, callingUid, targetPkgSetting)) {
+                return true;
+            }
             if (isHiddenPackage(targetPkgSetting.getPackageName())
                     && !canAccessHiddenPackages(computer, callingUid, callingSetting)) {
                 if (DEBUG_LOGGING || mFeatureConfig.isLoggingEnabled(callingAppId)) {
