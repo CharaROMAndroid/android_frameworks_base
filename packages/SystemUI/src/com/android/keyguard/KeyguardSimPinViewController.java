@@ -52,6 +52,8 @@ import com.android.systemui.res.R;
 import com.android.systemui.user.domain.interactor.SelectedUserInteractor;
 import com.android.systemui.util.wrapper.LockPatternCheckerWrapper;
 
+import lineageos.providers.LineageSettings;
+
 import java.util.Optional;
 
 public class KeyguardSimPinViewController
@@ -123,6 +125,7 @@ public class KeyguardSimPinViewController
     protected void onViewAttached() {
         super.onViewAttached();
         mKeyguardUpdateMonitor.registerCallback(mUpdateMonitorCallback);
+        updateSimPinScrambling();
     }
 
     @Override
@@ -155,9 +158,17 @@ public class KeyguardSimPinViewController
         return false;
     }
 
+    private void updateSimPinScrambling() {
+        mView.updatePinScrambling(
+                LineageSettings.System.getIntForUser(getContext().getContentResolver(),
+                        LineageSettings.System.SIM_PIN_SCRAMBLE_LAYOUT, 0,
+                        mSelectedUserInteractor.getSelectedUserId()) == 1);
+    }
+
     @Override
     public void onResume(int reason) {
         super.onResume(reason);
+        updateSimPinScrambling();
         mView.resetState();
     }
 
