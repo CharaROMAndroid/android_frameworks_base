@@ -45,10 +45,10 @@ public class DeviceConfigUtils {
     public static boolean shouldDenyDeviceConfigControl(String namespace, String property) {
         if (DEBUG) Log.d(TAG, "shouldAllowDeviceConfigControl, namespace=" + namespace + ", property=" + property);
         for (String p : getDeviceConfigsOverride()) {
-            String[] kv = p.split("=");
+            String[] kv = p.split("=", 2);
             String fullKey = kv[0];
             String[] nsKey = fullKey.split("/");
-            if (nsKey[0] == namespace && nsKey[1] == property){
+            if (nsKey[0].equals(namespace) && nsKey[1].equals(property)){
                 if (DEBUG) Log.d(TAG, "shouldAllowDeviceConfigControl, deny, namespace=" + namespace + ", property=" + property);
                 return true;
             }
@@ -60,18 +60,18 @@ public class DeviceConfigUtils {
     public static void setDefaultProperties(String filterNamespace, String filterProperty) {
         if (DEBUG) Log.d(TAG, "setDefaultProperties");
         for (String p : getDeviceConfigsOverride()) {
-            String[] kv = p.split("=");
+            String[] kv = p.split("=", 2);
             String fullKey = kv[0];
             String[] nsKey = fullKey.split("/");
 
             String namespace = nsKey[0];
             String key = nsKey[1];
 
-            if (filterNamespace != null && filterNamespace == namespace){
+            if (filterNamespace != null && filterNamespace.equals(namespace)){
                 continue;
             }
 
-            if (filterProperty != null && filterProperty == key){
+            if (filterProperty != null && filterProperty.equals(key)){
                 continue;
             }
 
