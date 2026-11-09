@@ -8252,6 +8252,9 @@ public final class ActivityThread extends ClientTransactionHandler
             }
         }
 
+        // Apply after PIF, which may also virtualize the same property pages.
+        android.os.AdbStatePrivacy.initializeProcess(appContext);
+
         // Initialize the default http proxy in this process.
         Trace.traceBegin(Trace.TRACE_TAG_ACTIVITY_MANAGER, "Setup proxies");
         try {

@@ -560,6 +560,23 @@ public final class PlayIntegritySpoofService {
         }
     }
 
+    // Reapply these together with ADB privacy: a second private remap otherwise discards
+    // any earlier PIF edits that happened to share the same property context page.
+    private final Map<String, String> mAppliedPropertyOverrides = new HashMap<>();
+
+    public boolean spoofAdbProperties(String[] keys, String[] values) {
+        if (keys.length != values.length) return false;
+        Map<String, String> merged = new HashMap<>(mAppliedPropertyOverrides);
+        for (int i = 0; i < keys.length; i++) merged.put(keys[i], values[i]);
+        boolean ok = nativeSpoofProperties(merged.keySet().toArray(new String[0]),
+                merged.values().toArray(new String[0]), false);
+        if (ok) {
+            mAppliedPropertyOverrides.clear();
+            mAppliedPropertyOverrides.putAll(merged);
+        }
+        return ok;
+    }
+
     public void spoofProperties() {
         if (!mConfigLoaded || !mSpoofProps || mPropsSpoofed) return;
 
@@ -597,6 +614,8 @@ public final class PlayIntegritySpoofService {
             boolean ok = nativeSpoofProperties(keys, values, mDebug || mVerboseLogs > 0);
             if (ok) {
                 mPropsSpoofed = true;
+                mAppliedPropertyOverrides.clear();
+                mAppliedPropertyOverrides.putAll(props);
                 Log.i(TAG, "Property area virtualization active (" + keys.length + " rules)");
             } else {
                 Log.w(TAG, "Property area virtualization returned false");
