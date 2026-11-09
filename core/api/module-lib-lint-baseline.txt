@@ -1787,3 +1787,9 @@ UnflaggedApi: android.os.IpcDataCache#MODULE_TELEPHONY:
     New API must be flagged with @FlaggedApi: field android.os.IpcDataCache.MODULE_TELEPHONY
 UnflaggedApi: android.provider.Settings.Config#getAllStrings():
     New API must be flagged with @FlaggedApi: method android.provider.Settings.Config.getAllStrings()
+UnflaggedApi: android.ext.ConnectivityUtil:
+    New API must be flagged with @FlaggedApi: class android.ext.ConnectivityUtil
+UnflaggedApi: android.ext.ConnectivityUtil#isRegularAppWithLockdownVpnEnabled(android.content.Context, int):
+    New API must be flagged with @FlaggedApi: method android.ext.ConnectivityUtil.isRegularAppWithLockdownVpnEnabled(android.content.Context,int)
+UnflaggedApi: android.ext.ConnectivityUtil#isSystem(android.content.Context, int):
+    New API must be flagged with @FlaggedApi: method android.ext.ConnectivityUtil.isSystem(android.content.Context,int)
