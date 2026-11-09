@@ -2395,3 +2395,9 @@ UnflaggedApi: android.telephony.satellite.SatelliteTransmissionUpdateCallback#on
 
 UserHandle: android.telecom.TelecomManager#isInSelfManagedCall(String, android.os.UserHandle):
     When a method overload is needed to target a specific UserHandle, callers should be directed to use Context.createPackageContextAsUser() and re-obtain the relevant Manager, and no new API should be added
+UnflaggedApi: android.app.AppOpsManager#OP_NONE:
+    New API must be flagged with @FlaggedApi: field android.app.AppOpsManager.OP_NONE
+UnflaggedApi: android.content.Context#sendBroadcastAsUserMultiplePermissions(android.content.Intent, android.os.UserHandle, String[], android.app.BroadcastOptions):
+    New API must be flagged with @FlaggedApi: method android.content.Context.sendBroadcastAsUserMultiplePermissions(android.content.Intent,android.os.UserHandle,String[],android.app.BroadcastOptions)
+UnflaggedApi: android.content.Context#sendOrderedBroadcastAsUser(android.content.Intent, android.os.UserHandle, String, int, android.os.Bundle, android.content.BroadcastReceiver, android.os.Handler, int, String, android.os.Bundle):
+    New API must be flagged with @FlaggedApi: method android.content.Context.sendOrderedBroadcastAsUser(android.content.Intent,android.os.UserHandle,String,int,android.os.Bundle,android.content.BroadcastReceiver,android.os.Handler,int,String,android.os.Bundle)
