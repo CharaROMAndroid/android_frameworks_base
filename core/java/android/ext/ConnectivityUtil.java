@@ -1,6 +1,7 @@
 package android.ext;
 
 import android.annotation.NonNull;
+import android.annotation.SystemApi;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -8,6 +9,7 @@ import android.os.UserHandle;
 import android.provider.Settings;
 
 /** @hide */
+@SystemApi(client = SystemApi.Client.MODULE_LIBRARIES)
 public class ConnectivityUtil {
     private ConnectivityUtil() {}
     /**
