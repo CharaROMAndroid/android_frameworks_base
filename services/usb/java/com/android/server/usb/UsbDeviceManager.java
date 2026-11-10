@@ -27,6 +27,7 @@ import static com.android.internal.util.dump.DumpUtils.writeStringIfNotNull;
 
 import android.annotation.RequiresNoPermission;
 import android.app.ActivityManager;
+import android.app.admin.DevicePolicyManagerInternal;
 import android.app.KeyguardManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -205,6 +206,7 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
     private static final int MSG_UPDATE_USB_SPEED = 22;
     private static final int MSG_UPDATE_HAL_VERSION = 23;
     private static final int MSG_USER_UNLOCKED_AFTER_BOOT = 24;
+    private static final int MSG_ADB_SAFETY_FUNCTIONS = 25;
     private static final long FUNCTION_CTRL = 1 << 8;
 
     // Delay for debouncing USB disconnects.
@@ -825,6 +827,9 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
         private boolean mUsbCharging;
         private boolean mHideUsbNotification;
         private boolean mSupportsAllCombinations;
+        // Confined to the USB handler. Saved defaults are not changed by safety shutdown.
+        private boolean mAdbSafetyFunctions;
+        private int mAdbSafetyUser = UserHandle.USER_NULL;
         private boolean mScreenLocked;
         private boolean mIsKeyguardShowing;
         private boolean mSystemReady;
@@ -1083,6 +1088,26 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
 
             setEnabledFunctions(mCurrentFunctions, true, operationId);
             updateAdbNotification(false);
+        }
+
+        /** Rechecked at application, not just at request time, on both gadget implementations. */
+        protected long constrainAdbSafetyFunctions(long requested) {
+            if (!mAdbSafetyFunctions) return requested;
+            final int currentUser = ActivityManager.getCurrentUser();
+            final UserHandle user = UserHandle.of(currentUser);
+            final UserManager users = mContext.getSystemService(UserManager.class);
+            final KeyguardManager keyguard = mContext.getSystemService(KeyguardManager.class);
+            final DevicePolicyManagerInternal policy =
+                    LocalServices.getService(DevicePolicyManagerInternal.class);
+            final boolean allowed = mBootCompleted && mCurrentUser == currentUser
+                    && mAdbSafetyUser == currentUser && !mScreenLocked && !mIsKeyguardShowing
+                    && keyguard != null && !keyguard.isKeyguardLocked()
+                    && !keyguard.isDeviceLocked(currentUser)
+                    && users != null && users.isUserUnlocked(user)
+                    && !users.hasUserRestrictionForUser(UserManager.DISALLOW_USB_FILE_TRANSFER, user)
+                    && (policy == null || policy.isUsbDataSignalingEnabled())
+                    && getTrustRestrictUsb() != 2;
+            return UsbAdbSafetyPolicy.constrain(requested, allowed);
         }
 
         protected boolean isUsbTransferAllowed() {
@@ -1580,12 +1605,24 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
                 case MSG_ENABLE_ADB:
                     setAdbEnabled(msg.arg1 == 1, msg.arg2);
                     break;
+                case MSG_ADB_SAFETY_FUNCTIONS:
+                    // Ignore a stale request if the user explicitly enabled USB ADB afterward.
+                    if (isAdbEnabled()) break;
+                    mAdbSafetyFunctions = true;
+                    mAdbSafetyUser = msg.arg1;
+                    operationId = sUsbOperationCount.incrementAndGet();
+                    // Also remove persistent ADB functions, including an already-disabled cache.
+                    setAdbEnabled(false, operationId);
+                    setEnabledFunctions(UsbManager.FUNCTION_MTP, true, operationId);
+                    break;
                 case MSG_SET_CURRENT_FUNCTIONS:
+                    mAdbSafetyFunctions = false;
                     long functions = (Long) msg.obj;
                     operationId = (int) msg.arg1;
                     setEnabledFunctions(functions, false, operationId);
                     break;
                 case MSG_SET_SCREEN_UNLOCKED_FUNCTIONS:
+                    mAdbSafetyFunctions = false;
                     operationId = sUsbOperationCount.incrementAndGet();
                     mScreenUnlockedFunctions = (Long) msg.obj;
                     if (mSettings != null) {
@@ -1607,6 +1644,10 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
                     mIsKeyguardShowing = msg.arg1 == 1;
                     boolean secure = msg.arg2 == 1;
                     setTrustRestrictUsb();
+                    if (mAdbSafetyFunctions && mIsKeyguardShowing) {
+                        // Existing behavior preserves MTP on lock when connected; safety must not.
+                        setEnabledFunctions(UsbManager.FUNCTION_NONE, true, operationId);
+                    }
                     if ((mIsKeyguardShowing && secure) == mScreenLocked) {
                         break;
                     }
@@ -1627,6 +1668,10 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
                     }
                     break;
                 case MSG_UPDATE_USER_RESTRICTIONS:
+                    if (mAdbSafetyFunctions) {
+                        setEnabledFunctions(mCurrentFunctions, true,
+                                sUsbOperationCount.incrementAndGet());
+                    }
                     operationId = sUsbOperationCount.incrementAndGet();
                     // Restart the USB stack if USB transfer is enabled but no longer allowed.
                     if (isUsbDataTransferActive(mCurrentFunctions) && !isUsbTransferAllowed()) {
@@ -1990,6 +2035,10 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
         }
 
         protected long getChargingFunctions() {
+            if (mAdbSafetyFunctions) {
+                // FUNCTION_NONE normally falls back to MTP here, which is unsafe while locked.
+                return isAdbEnabled() ? UsbManager.FUNCTION_ADB : UsbManager.FUNCTION_NONE;
+            }
             // if ADB is enabled, reset functions to ADB
             // else enable MTP as usual.
             if (isAdbEnabled()) {
@@ -2329,6 +2378,7 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
         @Override
         protected void setEnabledFunctions(long usbFunctions,
                 boolean forceRestart, int operationId) {
+            usbFunctions = constrainAdbSafetyFunctions(usbFunctions);
             boolean usbDataUnlocked = isUsbDataTransferActive(usbFunctions);
             if (DEBUG) {
                 Slog.d(TAG, "setEnabledFunctions functions=" + usbFunctions +
@@ -2408,6 +2458,7 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
         }
 
         private boolean trySetEnabledFunctions(long usbFunctions, boolean forceRestart) {
+            usbFunctions = constrainAdbSafetyFunctions(usbFunctions);
             String functions = null;
             if (usbFunctions != UsbManager.FUNCTION_NONE) {
                 functions = UsbManager.usbFunctionsToString(usbFunctions);
@@ -2834,6 +2885,7 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
 
         @Override
         protected void setEnabledFunctions(long functions, boolean forceRestart, int operationId) {
+            functions = constrainAdbSafetyFunctions(functions);
             if (DEBUG) {
                 Slog.d(TAG, "setEnabledFunctionsi " +
                         "functions=" + functions +
@@ -3098,6 +3150,12 @@ public class UsbDeviceManager implements ActivityTaskManagerInternal.ScreenObser
             // TODO: Add MetricsEvent for UVC?
         }
         mHandler.sendMessage(MSG_SET_CURRENT_FUNCTIONS, functions, operationId);
+    }
+
+    /** Called only through the local ADB safety bridge, never through app Binder input. */
+    public void selectFunctionsAfterAdbShutdown(int foregroundUserId) {
+        mHandler.sendMessage(mHandler.obtainMessage(
+                MSG_ADB_SAFETY_FUNCTIONS, foregroundUserId, 0));
     }
 
     /**

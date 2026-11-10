@@ -19,6 +19,7 @@ import static com.android.internal.util.function.pooled.PooledLambda.obtainMessa
 
 import android.annotation.NonNull;
 import android.annotation.UserIdInt;
+import android.app.ActivityManager;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.pm.PackageManager;
@@ -224,12 +225,14 @@ public class AdbService extends IAdbManager.Stub {
     private final AdbDebuggingManager mDebuggingManager;
 
     private ContentObserver mObserver;
+    private final AdbSafetyController mSafetyController;
 
     private AdbService(Context context) {
         mContext = context;
         mContentResolver = context.getContentResolver();
         mDebuggingManager = new AdbDebuggingManager(context);
 
+        mSafetyController = new AdbSafetyController(context, this);
         registerContentObservers();
         LocalServices.addService(AdbManagerInternal.class, new AdbManagerInternalImpl());
     }
@@ -274,6 +277,7 @@ public class AdbService extends IAdbManager.Stub {
         Slog.d(TAG, "boot completed");
         mDebuggingManager.setAdbEnabled(mIsAdbUsbEnabled, AdbTransportType.USB);
         mDebuggingManager.setAdbEnabled(mIsAdbWifiEnabled, AdbTransportType.WIFI);
+        mSafetyController.start();
     }
 
     @Override
@@ -430,7 +434,40 @@ public class AdbService extends IAdbManager.Stub {
         SystemProperties.set(WIFI_PERSISTENT_CONFIG_PROPERTY, "0");
     }
 
+    /** FgThread only. This uses the same authoritative transport path as normal Settings. */
+    void disableDebuggingForSafety() {
+        // Write both settings even if policy prevents one write. Never restore a prior value.
+        for (String key : new String[] {
+                Settings.Global.ADB_ENABLED, Settings.Global.ADB_WIFI_ENABLED}) {
+            try {
+                Settings.Global.putInt(mContentResolver, key, 0);
+            } catch (SecurityException e) {
+                Slog.w(TAG, "Cannot persist disabled debugging for " + key, e);
+            }
+        }
+        mDebuggingManager.disableDebuggingForSafety();
+        setAdbEnabledDoNotCallDirectly(false, AdbTransportType.USB);
+        setAdbEnabledDoNotCallDirectly(false, AdbTransportType.WIFI);
+        // Reassert the native shutdown even if cached transport booleans were already false.
+        disableADBdWifi();
+        stopAdbd();
+        final AdbSafetyController.UsbFunctions usb =
+                LocalServices.getService(AdbSafetyController.UsbFunctions.class);
+        if (usb != null) {
+            usb.selectAfterAdbShutdown(ActivityManager.getCurrentUser());
+        }
+    }
+
     private void setAdbEnabledDoNotCallDirectly(boolean enable, byte transportType) {
+        // Content observers may have enqueued an enable before a safety shutdown.
+        // Do not let that stale message restart adbd after the global settings are off.
+        if (enable && (transportType == AdbTransportType.USB
+                || transportType == AdbTransportType.WIFI)) {
+            final String key = transportType == AdbTransportType.USB
+                    ? Settings.Global.ADB_ENABLED : Settings.Global.ADB_WIFI_ENABLED;
+            enable = Settings.Global.getInt(mContentResolver, key, 0) != 0;
+        }
+
         Slog.d(
                 TAG,
                 "setAdbEnabled("
@@ -487,18 +524,19 @@ public class AdbService extends IAdbManager.Stub {
         mDebuggingManager.setAdbEnabled(enable, transportType);
 
         Slog.d(TAG, "Broadcasting enable = " + enable + ", type = " + transportType);
+        final boolean callbackEnabled = enable;
         mCallbacks.broadcast(
                 (callback) -> {
                     Slog.d(
                             TAG,
                             "Sending enable = "
-                                    + enable
+                                    + callbackEnabled
                                     + ", type = "
                                     + transportType
                                     + " to "
                                     + callback);
                     try {
-                        callback.onDebuggingChanged(enable, transportType);
+                        callback.onDebuggingChanged(callbackEnabled, transportType);
                     } catch (RemoteException ex) {
                         Slog.w(TAG, "Unable to send onDebuggingChanged:", ex);
                     }

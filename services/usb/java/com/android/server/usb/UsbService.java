@@ -87,6 +87,7 @@ import com.android.internal.util.dump.DualDumpOutputStream;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.server.FgThread;
 import com.android.server.LocalServices;
+import com.android.server.adb.AdbSafetyController;
 import com.android.server.SystemServerInitThreadPool;
 import com.android.server.SystemService;
 import com.android.server.pm.UserManagerInternal;
@@ -274,6 +275,14 @@ public class UsbService extends IUsbManager.Stub {
                 }
             }
         };
+
+        // Local-only bridge. Do not expose this operation through a public Binder API.
+        LocalServices.addService(AdbSafetyController.UsbFunctions.class,
+                (AdbSafetyController.UsbFunctions) userId -> {
+                    if (mDeviceManager != null) {
+                        mDeviceManager.selectFunctionsAfterAdbShutdown(userId);
+                    }
+                });
 
         final IntentFilter filter = new IntentFilter();
         filter.setPriority(IntentFilter.SYSTEM_HIGH_PRIORITY);
@@ -969,9 +978,7 @@ public class UsbService extends IUsbManager.Stub {
     public long getCurrentFunctions() {
         getCurrentFunctions_enforcePermission();
         Preconditions.checkState(mDeviceManager != null);
-        long functions = mDeviceManager.getCurrentFunctions();
-        return android.os.AdbStatePrivacy.shouldHideUid(mContext, Binder.getCallingUid())
-                ? UsbManager.FUNCTION_MTP : functions;
+        return mDeviceManager.getCurrentFunctions();
     }
 
     @android.annotation.EnforcePermission(android.Manifest.permission.MANAGE_USB)

@@ -2039,7 +2039,7 @@ class ContextImpl extends Context {
                 intent.prepareToEnterProcess(ActivityThread.isProtectedBroadcast(intent),
                         getAttributionSource());
             }
-            return android.os.AdbStatePrivacy.filterUsbBroadcast(intent);
+            return intent;
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }

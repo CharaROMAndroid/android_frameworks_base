@@ -464,21 +464,6 @@ public class SettingsProvider extends ContentProvider {
     public Bundle call(String method, String name, Bundle args) {
         final @CanBeCURRENT @UserIdInt int requestingUserId = getRequestingUserId(args);
         final int callingDeviceId = getDeviceId();
-        if (android.os.AdbStatePrivacy.CALL_POLICY.equals(method)) {
-            Bundle result = new Bundle();
-            result.putBoolean("hide", shouldHideAdbForCaller());
-            return result;
-        }
-        if ((Settings.CALL_METHOD_GET_GLOBAL.equals(method)
-                || Settings.CALL_METHOD_GET_SECURE.equals(method))
-                && android.os.AdbStatePrivacy.isDebugSetting(name)
-                && shouldHideAdbForCaller()) {
-            resolveCallingUserIdEnforcingPermissions(requestingUserId);
-            enforceSettingReadable(name, Settings.CALL_METHOD_GET_GLOBAL.equals(method)
-                    ? SETTINGS_TYPE_GLOBAL : SETTINGS_TYPE_SECURE, requestingUserId);
-            // Do not attach global generation tracking to a caller-specific answer.
-            return Bundle.forPair(Settings.NameValueTable.VALUE, "0");
-        }
         if (method != null && method.startsWith("GET_")) {
             String spoofed = getSpoofedValue(name);
             if (spoofed != null) {
@@ -658,25 +643,6 @@ public class SettingsProvider extends ContentProvider {
         return null;
     }
 
-    private boolean shouldHideAdbForCaller() {
-        final int uid = Binder.getCallingUid();
-        if (UserHandle.getAppId(uid) < Process.FIRST_APPLICATION_UID
-                || Process.isIsolated(uid)) return false;
-        final long token = Binder.clearCallingIdentity();
-        try {
-            String[] packages = getContext().getPackageManager().getPackagesForUid(uid);
-            synchronized (mLock) {
-                Setting config = mSettingsRegistry.getSettingLocked(SETTINGS_TYPE_SECURE,
-                        UserHandle.getUserId(uid), Context.DEVICE_ID_DEFAULT,
-                        android.os.AdbStatePrivacy.PACKAGES);
-                return config != null && android.os.AdbStatePrivacy.matches(
-                        config.getValue(), packages);
-            }
-        } finally {
-            Binder.restoreCallingIdentity(token);
-        }
-    }
-
     private String getSpoofedValue(String name) {
         String callingPackage = getCallingPackage();
         if (callingPackage == null) return null;
@@ -721,21 +687,6 @@ public class SettingsProvider extends ContentProvider {
         // If a legacy table that is gone, done.
         if (REMOVED_LEGACY_TABLES.contains(args.table)) {
             return new MatrixCursor(normalizedProjection, 0);
-        }
-
-        if ((TABLE_GLOBAL.equals(args.table) || TABLE_SECURE.equals(args.table))
-                && args.name != null && android.os.AdbStatePrivacy.isDebugSetting(args.name)
-                && shouldHideAdbForCaller()) {
-            enforceSettingReadable(args.name, TABLE_GLOBAL.equals(args.table)
-                    ? SETTINGS_TYPE_GLOBAL : SETTINGS_TYPE_SECURE,
-                    UserHandle.getCallingUserId());
-            synchronized (mLock) {
-                SettingsState state = mSettingsRegistry.getSettingsLocked(SETTINGS_TYPE_GLOBAL,
-                        UserHandle.USER_SYSTEM, Context.DEVICE_ID_DEFAULT);
-                Setting setting = state.new Setting(args.name, "0", true, null, null);
-                return packageSettingForQuery(setting, normalizedProjection,
-                        sReadableGlobalSettingsWithRedactedValue);
-            }
         }
 
         if (args.name != null) {
@@ -1639,7 +1590,6 @@ public class SettingsProvider extends ContentProvider {
             Slog.v(LOG_TAG, "getAllGlobalSettings()");
         }
 
-        final boolean hideAdb = shouldHideAdbForCaller();
         synchronized (mLock) {
             // Get the settings.
             // Note that global settings are applicable only for the default device, hence pass
@@ -1670,8 +1620,7 @@ public class SettingsProvider extends ContentProvider {
                 if (setting == null || setting.isNull()) {
                     continue;
                 }
-                String value = hideAdb && android.os.AdbStatePrivacy.isDebugSetting(name)
-                        ? "0" : getEffectiveValue(setting, sReadableGlobalSettingsWithRedactedValue);
+                String value = getEffectiveValue(setting, sReadableGlobalSettingsWithRedactedValue);
                 appendSettingToCursor(result, String.valueOf(setting.getId()), setting.getName(),
                         value, String.valueOf(setting.isValuePreservedInRestore()));
             }

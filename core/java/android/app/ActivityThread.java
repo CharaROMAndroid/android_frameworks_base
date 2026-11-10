@@ -5331,12 +5331,11 @@ public final class ActivityThread extends ClientTransactionHandler
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.P, trackingBug = 115609023)
     private void handleReceiver(ReceiverData data) {
-        final Intent receiverIntent = android.os.AdbStatePrivacy.filterUsbBroadcast(data.intent);
         // If we are getting ready to gc after going to the background, well
         // we are back active so skip it.
         unscheduleGcIdler();
 
-        String component = receiverIntent.getComponent().getClassName();
+        String component = data.intent.getComponent().getClassName();
 
         final LoadedApk packageInfo = getPackageInfoNoCheck(data.info.applicationInfo);
 
@@ -5357,16 +5356,16 @@ public final class ActivityThread extends ClientTransactionHandler
             }
             context = (ContextImpl) createDisplayContextIfNeeded(context, data);
             java.lang.ClassLoader cl = context.getClassLoader();
-            receiverIntent.setExtrasClassLoader(cl);
-            receiverIntent.prepareToEnterProcess(
-                    isProtectedComponent(data.info) || isProtectedBroadcast(receiverIntent),
+            data.intent.setExtrasClassLoader(cl);
+            data.intent.prepareToEnterProcess(
+                    isProtectedComponent(data.info) || isProtectedBroadcast(data.intent),
                     context.getAttributionSource());
             data.setExtrasClassLoader(cl);
             receiver = packageInfo.getAppFactory()
-                    .instantiateReceiver(cl, data.info.name, receiverIntent);
+                    .instantiateReceiver(cl, data.info.name, data.intent);
         } catch (Exception e) {
             if (DEBUG_BROADCAST) Slog.i(TAG,
-                    "Finishing failed broadcast to " + receiverIntent.getComponent());
+                    "Finishing failed broadcast to " + data.intent.getComponent());
             data.sendFinished(mgr);
             throw new RuntimeException(
                 "Unable to instantiate receiver " + component, e);
@@ -5379,20 +5378,20 @@ public final class ActivityThread extends ClientTransactionHandler
         }
         try {
             if (localLOGV) Slog.v(
-                TAG, "Performing receive of " + receiverIntent
+                TAG, "Performing receive of " + data.intent
                 + ": app=" + app
                 + ", appName=" + app.getPackageName()
                 + ", pkg=" + packageInfo.getPackageName()
-                + ", comp=" + receiverIntent.getComponent().toShortString()
+                + ", comp=" + data.intent.getComponent().toShortString()
                 + ", dir=" + packageInfo.getAppDir());
 
-            sCurrentBroadcastIntent.set(receiverIntent);
+            sCurrentBroadcastIntent.set(data.intent);
             receiver.setPendingResult(data);
             receiver.onReceive(context.getReceiverRestrictedContext(),
-                    receiverIntent);
+                    data.intent);
         } catch (Exception e) {
             if (DEBUG_BROADCAST) Slog.i(TAG,
-                    "Finishing failed broadcast to " + receiverIntent.getComponent());
+                    "Finishing failed broadcast to " + data.intent.getComponent());
             data.sendFinished(mgr);
             if (!mInstrumentation.onException(receiver, e)) {
                 throw new RuntimeException(
@@ -8252,9 +8251,6 @@ public final class ActivityThread extends ClientTransactionHandler
                 pifService.spoofPhotosProps();
             }
         }
-
-        // Apply after PIF, which may also virtualize the same property pages.
-        android.os.AdbStatePrivacy.initializeProcess(appContext);
 
         // Initialize the default http proxy in this process.
         Trace.traceBegin(Trace.TRACE_TAG_ACTIVITY_MANAGER, "Setup proxies");
