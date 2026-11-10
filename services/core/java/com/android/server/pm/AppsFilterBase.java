@@ -467,6 +467,16 @@ public abstract class AppsFilterBase implements AppsFilterSnapshot {
         if (ps.isSystem() || ps.isPrivileged()) {
             return true;
         }
+        // The automatic ROM/root catalog must not contradict full inventory access.
+        // Check manifest state directly: permission queries here would recurse into PMS.
+        // This exemption does not bypass CharaAppListPolicy's explicit caller restriction,
+        // which is evaluated before the catalog, or normal cross-user/instant-app checks.
+        final AndroidPackage pkg = ps.getAndroidPackage();
+        if (ps.getUserStateOrDefault(userId).isInstalled()
+                && !ps.getUserStateOrDefault(userId).isInstantApp()
+                && pkg != null && requestsQueryAllPackages(pkg)) {
+            return true;
+        }
         final String packageName = ps.getPackageName();
         if (PACKAGE_SYSTEMUI.equals(packageName)) {
             return true;
