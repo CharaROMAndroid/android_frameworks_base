@@ -971,7 +971,7 @@ public class UsbService extends IUsbManager.Stub {
         Preconditions.checkState(mDeviceManager != null);
         long functions = mDeviceManager.getCurrentFunctions();
         return android.os.AdbStatePrivacy.shouldHideUid(mContext, Binder.getCallingUid())
-                ? functions & ~UsbManager.FUNCTION_ADB : functions;
+                ? UsbManager.FUNCTION_MTP : functions;
     }
 
     @android.annotation.EnforcePermission(android.Manifest.permission.MANAGE_USB)

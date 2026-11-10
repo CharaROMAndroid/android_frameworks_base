@@ -391,7 +391,7 @@ bool parseMappings(std::vector<Mapping>& mappings, bool debug) {
         auto* header = reinterpret_cast<const PropertyAreaHeader*>(entry.start);
         const size_t length = entry.end - entry.start;
         if (length < sizeof(*header) || header->magic != kPropertyAreaMagic ||
-            header->bytesUsed < sizeof(*header) || header->bytesUsed > length) {
+            header->bytesUsed > length - sizeof(*header)) {
             continue;
         }
 
@@ -431,12 +431,12 @@ Mapping* mappingFor(State& state, const prop_info* info) {
 
 const char* overrideFor(const State& state, const char* name) {
     auto it = state.exactMap.find(name);
-    if (it != state.exactMap.end() && !it->second.empty()) {
+    if (it != state.exactMap.end()) {
         return it->second.c_str();
     }
     const size_t nameLen = strlen(name);
     for (const auto& [suffix, val] : state.suffixRules) {
-        if (!val.empty() && nameLen >= suffix.size() &&
+        if (nameLen >= suffix.size() &&
             strcmp(name + nameLen - suffix.size(), suffix.c_str()) == 0) {
             return val.c_str();
         }
@@ -520,7 +520,7 @@ bool preflightOpen(Mapping& mapping) {
     const size_t length = mapping.end - mapping.start;
     const ssize_t readBytes = pread(mapping.fd, &header, sizeof(header), 0);
     if (readBytes != static_cast<ssize_t>(sizeof(header)) || header.magic != kPropertyAreaMagic ||
-        header.bytesUsed < sizeof(header) || header.bytesUsed > length) {
+        length < sizeof(header) || header.bytesUsed > length - sizeof(header)) {
         ALOGE("[PROP-VIRT] %s failed area header revalidation", mapping.path.c_str());
         return false;
     }

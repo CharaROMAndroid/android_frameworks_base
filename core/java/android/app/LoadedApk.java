@@ -1995,7 +1995,7 @@ public final class LoadedApk {
                         mRegistered ? TYPE_REGISTERED : TYPE_UNREGISTERED, ordered,
                         sticky, assumeDelivered, mAppThread.asBinder(), sendingUser,
                         intent.getFlags(), sendingUid, sendingPackage);
-                mCurIntent = intent;
+                mCurIntent = android.os.AdbStatePrivacy.filterUsbBroadcast(intent);
             }
 
             public final Runnable getRunnable() {

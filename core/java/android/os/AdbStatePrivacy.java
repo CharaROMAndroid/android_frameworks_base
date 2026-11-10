@@ -5,6 +5,8 @@
 package android.os;
 
 import android.content.Context;
+import android.content.Intent;
+import android.hardware.usb.UsbManager;
 import android.net.Uri;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -21,6 +23,8 @@ public final class AdbStatePrivacy {
     public static final String PACKAGES = "adb_state_hidden_packages";
     public static final String CALL_POLICY = "GET_adb_state_privacy";
     private static final String TAG = "AdbStatePrivacy";
+
+    private static volatile boolean sHideInProcess;
 
     private AdbStatePrivacy() {}
 
@@ -64,6 +68,20 @@ public final class AdbStatePrivacy {
         return remaining.isEmpty() ? "none" : TextUtils.join(",", remaining);
     }
 
+    /**
+     * Filter a copy on entry to this selected app, including sticky-cache returns.
+     * No provider IPC here: receiver dispatch must not call back into system services.
+     * Raw Binder clients and native socket observations are not covered.
+     */
+    public static Intent filterUsbBroadcast(Intent intent) {
+        if (!sHideInProcess || intent == null
+                || !UsbManager.ACTION_USB_STATE.equals(intent.getAction())) return intent;
+        Intent filtered = new Intent(intent);
+        filtered.putExtra(UsbManager.USB_FUNCTION_ADB, false);
+        filtered.putExtra(UsbManager.USB_FUNCTION_MTP, true);
+        return filtered;
+    }
+
     /** Same private property-area virtualization engine used by built-in PIF. */
     public static void initializeProcess(Context context) {
         if (Process.isIsolated()
@@ -73,6 +91,7 @@ public final class AdbStatePrivacy {
             Bundle policy = context.getContentResolver().call(
                     Uri.parse("content://settings"), CALL_POLICY, null, null);
             if (policy == null || !policy.getBoolean("hide", false)) return;
+            sHideInProcess = true;
             String[] keys = {
                 "init.svc.adbd", "init.svc_debug_pid.adbd",
                 "sys.usb.config", "sys.usb.state", "persist.sys.usb.config",
@@ -82,9 +101,9 @@ public final class AdbStatePrivacy {
             };
             String[] values = {
                 "stopped", "",
-                withoutAdb(SystemProperties.get("sys.usb.config")),
-                withoutAdb(SystemProperties.get("sys.usb.state")),
-                withoutAdb(SystemProperties.get("persist.sys.usb.config")),
+                "mtp",
+                "mtp",
+                "mtp",
                 "", "", "", "", "", "0"
             };
             if (!android.security.pif.PlayIntegritySpoofService.getInstance()

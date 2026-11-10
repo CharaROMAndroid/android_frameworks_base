@@ -5331,11 +5331,12 @@ public final class ActivityThread extends ClientTransactionHandler
 
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.P, trackingBug = 115609023)
     private void handleReceiver(ReceiverData data) {
+        final Intent receiverIntent = android.os.AdbStatePrivacy.filterUsbBroadcast(data.intent);
         // If we are getting ready to gc after going to the background, well
         // we are back active so skip it.
         unscheduleGcIdler();
 
-        String component = data.intent.getComponent().getClassName();
+        String component = receiverIntent.getComponent().getClassName();
 
         final LoadedApk packageInfo = getPackageInfoNoCheck(data.info.applicationInfo);
 
@@ -5356,16 +5357,16 @@ public final class ActivityThread extends ClientTransactionHandler
             }
             context = (ContextImpl) createDisplayContextIfNeeded(context, data);
             java.lang.ClassLoader cl = context.getClassLoader();
-            data.intent.setExtrasClassLoader(cl);
-            data.intent.prepareToEnterProcess(
-                    isProtectedComponent(data.info) || isProtectedBroadcast(data.intent),
+            receiverIntent.setExtrasClassLoader(cl);
+            receiverIntent.prepareToEnterProcess(
+                    isProtectedComponent(data.info) || isProtectedBroadcast(receiverIntent),
                     context.getAttributionSource());
             data.setExtrasClassLoader(cl);
             receiver = packageInfo.getAppFactory()
-                    .instantiateReceiver(cl, data.info.name, data.intent);
+                    .instantiateReceiver(cl, data.info.name, receiverIntent);
         } catch (Exception e) {
             if (DEBUG_BROADCAST) Slog.i(TAG,
-                    "Finishing failed broadcast to " + data.intent.getComponent());
+                    "Finishing failed broadcast to " + receiverIntent.getComponent());
             data.sendFinished(mgr);
             throw new RuntimeException(
                 "Unable to instantiate receiver " + component, e);
@@ -5378,20 +5379,20 @@ public final class ActivityThread extends ClientTransactionHandler
         }
         try {
             if (localLOGV) Slog.v(
-                TAG, "Performing receive of " + data.intent
+                TAG, "Performing receive of " + receiverIntent
                 + ": app=" + app
                 + ", appName=" + app.getPackageName()
                 + ", pkg=" + packageInfo.getPackageName()
-                + ", comp=" + data.intent.getComponent().toShortString()
+                + ", comp=" + receiverIntent.getComponent().toShortString()
                 + ", dir=" + packageInfo.getAppDir());
 
-            sCurrentBroadcastIntent.set(data.intent);
+            sCurrentBroadcastIntent.set(receiverIntent);
             receiver.setPendingResult(data);
             receiver.onReceive(context.getReceiverRestrictedContext(),
-                    data.intent);
+                    receiverIntent);
         } catch (Exception e) {
             if (DEBUG_BROADCAST) Slog.i(TAG,
-                    "Finishing failed broadcast to " + data.intent.getComponent());
+                    "Finishing failed broadcast to " + receiverIntent.getComponent());
             data.sendFinished(mgr);
             if (!mInstrumentation.onException(receiver, e)) {
                 throw new RuntimeException(
