@@ -736,7 +736,6 @@ public class AdbDebuggingManager {
         }
 
         private void startAdbdWifi() {
-            if (mSafetyWifiDisabled) return;
             if (wifiLifeCycleOverAdbdauthSupported()) {
                 mThread.sendResponse(MSG_START_ADB_WIFI);
             } else {
@@ -761,7 +760,6 @@ public class AdbDebuggingManager {
             mAdbPairingThread =
                     new AdbPairingThread(
                             pairingCode, serviceName, mContext, adbWifiPairingMethod, this);
-            mPairingSessionAccepted = true;
             mAdbPairingThread.start();
         }
 
@@ -781,7 +779,6 @@ public class AdbDebuggingManager {
 
             switch (msg.what) {
                 case MESSAGE_ADB_ENABLED -> {
-                    if (mSafetyUsbDisabled) break;
                     if (mAdbUsbEnabled) {
                         break;
                     }
@@ -795,7 +792,6 @@ public class AdbDebuggingManager {
                     mAdbUsbEnabled = false;
                 }
                 case MESSAGE_ADB_ALLOW -> {
-                    if (mSafetyUsbDisabled) break;
                     String key = (String) msg.obj;
                     String fingerprints = getFingerprints(key);
                     if (!fingerprints.equals(mFingerprints)) {
@@ -809,7 +805,6 @@ public class AdbDebuggingManager {
                     }
 
                     boolean alwaysAllow = msg.arg1 == 1;
-                    mFingerprints = null; // Consume the outstanding prompt once.
                     mThread.sendResponse("OK");
                     if (alwaysAllow) {
                         if (!mConnectedKeys.containsKey(key)) {
@@ -825,13 +820,11 @@ public class AdbDebuggingManager {
                                     : AdbProtoEnums.USER_ALLOWED);
                 }
                 case MESSAGE_ADB_DENY -> {
-                    mFingerprints = null;
                     Slog.w(TAG, "Denying adb confirmation");
                     mThread.sendResponse("NO");
                     logAdbConnectionChanged(AdbProtoEnums.USER_DENIED);
                 }
                 case MESSAGE_ADB_CONFIRM -> {
-                    if (mSafetyUsbDisabled) break;
                     String key = (String) msg.obj;
                     String fingerprints = getFingerprints(key);
                     if ("".equals(fingerprints)) {
@@ -857,7 +850,7 @@ public class AdbDebuggingManager {
                             == 1) {
                         // If adb is currently enabled, then toggle it off and back on to disconnect
                         // any existing sessions.
-                        if (mAdbUsbEnabled && !mSafetyUsbDisabled) {
+                        if (mAdbUsbEnabled) {
                             try {
                                 SystemService.stop(ADBD);
                                 SystemService.waitForState(
@@ -937,7 +930,6 @@ public class AdbDebuggingManager {
                     }
                 }
                 case MSG_ADBDWIFI_ENABLE -> {
-                    if (mSafetyWifiDisabled) break;
                     if (mAdbWifiEnabled) {
                         break;
                     }
@@ -994,7 +986,6 @@ public class AdbDebuggingManager {
                     logAdbConnectionChanged(AdbProtoEnums.ADB_WIFI_DISABLED);
                 }
                 case MSG_START_TLS_SERVICE -> {
-                    if (mSafetyWifiDisabled) break;
                     if (!mAdbWifiEnabled) {
                         break;
                     }
@@ -1026,7 +1017,6 @@ public class AdbDebuggingManager {
                     logAdbConnectionChanged(AdbProtoEnums.ADB_WIFI_AUTO_DISABLED);
                 }
                 case MSG_ADBWIFI_ALLOW -> {
-                    if (mSafetyWifiDisabled) break;
                     if (!com.android.server.adb.Flags.allowAdbWifiReconnect()) {
                         if (mAdbWifiEnabled) {
                             break;
@@ -1035,13 +1025,6 @@ public class AdbDebuggingManager {
                     Bundle bundle = (Bundle) msg.obj;
                     String bssid = bundle.getString("bssid");
                     String ssid = bundle.getString("ssid");
-                    if (mPendingWifiBssid == null || mPendingWifiSsid == null
-                            || !mPendingWifiBssid.equals(bssid)
-                            || !mPendingWifiSsid.equals(ssid)) {
-                        break;
-                    }
-                    mPendingWifiBssid = null;
-                    mPendingWifiSsid = null;
                     boolean alwaysAllow = msg.arg1 == 1;
                     if (alwaysAllow) {
                         mAdbKeyStore.addTrustedNetwork(bssid, ssid);
@@ -1072,8 +1055,6 @@ public class AdbDebuggingManager {
                     Slog.i(TAG, "adb start wireless adb");
                 }
                 case MSG_ADBWIFI_DENY -> {
-                    mPendingWifiBssid = null;
-                    mPendingWifiSsid = null;
                     if (!com.android.server.adb.Flags.allowAdbWifiReconnect()) {
                         Settings.Global.putInt(
                                 mContentResolver, Settings.Global.ADB_WIFI_ENABLED, 0);
@@ -1097,11 +1078,8 @@ public class AdbDebuggingManager {
                     logAdbConnectionChanged(AdbProtoEnums.ADB_WIFI_UNPAIR_DEVICE);
                 }
                 case MSG_RESPONSE_PAIRING_RESULT -> {
-                    if (mSafetyWifiDisabled) break;
                     AdbWifiPairingResult adbWifiPairingResult = (AdbWifiPairingResult) msg.obj;
-                    if (mPairingSessionAccepted && mAdbPairingThread != null
-                            && AdbPairingThread.isCurrentSession(adbWifiPairingResult)) {
-                        mPairingSessionAccepted = false;
+                    if (AdbPairingThread.isCurrentSession(adbWifiPairingResult)) {
                         onPairingResult(adbWifiPairingResult);
                         // Send the updated paired devices list to the UI.
                         sendPairedDevicesToUI(getPairedDevicesForKeys(mAdbKeyStore.getKeys()));
@@ -1110,29 +1088,24 @@ public class AdbDebuggingManager {
                     }
                 }
                 case MSG_RESPONSE_PAIRING_PORT -> {
-                    if (mSafetyWifiDisabled) break;
                     AdbWifiPairingPort adbWifiPairingPort = (AdbWifiPairingPort) msg.obj;
-                    if (mPairingSessionAccepted && mAdbPairingThread != null
-                            && AdbPairingThread.isCurrentSession(adbWifiPairingPort)) {
+                    if (AdbPairingThread.isCurrentSession(adbWifiPairingPort)) {
                         sendPairingPortToUI(adbWifiPairingPort);
                     }
                 }
                 case MSG_PAIR_PAIRING_CODE -> {
-                    if (mSafetyWifiDisabled) break;
                     String pairingCode = createPairingCode(PAIRING_CODE_LENGTH);
                     updateUIPairCode(pairingCode);
                     startPairingThread(pairingCode, null, AdbWifiPairingMethod.PAIRING_CODE);
                     logAdbConnectionChanged(AdbProtoEnums.ADB_WIFI_PAIRING_CODE_STARTED);
                 }
                 case MSG_PAIR_QR_CODE -> {
-                    if (mSafetyWifiDisabled) break;
                     QRPairingParams params = (QRPairingParams) msg.obj;
                     startPairingThread(
                             params.password(), params.serviceName(), AdbWifiPairingMethod.QR_CODE);
                     logAdbConnectionChanged(AdbProtoEnums.ADB_WIFI_QR_PAIRING_STARTED);
                 }
                 case MSG_PAIRING_CANCEL -> {
-                    mPairingSessionAccepted = false;
                     if (mAdbPairingThread != null) {
                         mAdbPairingThread.cancelPairing();
                         mAdbPairingThread = null;
@@ -1140,7 +1113,6 @@ public class AdbDebuggingManager {
                     }
                 }
                 case MSG_WIFI_DEVICE_CONNECTED -> {
-                    if (mSafetyWifiDisabled) break;
                     String key = (String) msg.obj;
                     if (mWifiConnectedKeys.add(key)) {
                         sendPairedDevicesToUI(getPairedDevicesForKeys(mAdbKeyStore.getKeys()));
@@ -1159,7 +1131,6 @@ public class AdbDebuggingManager {
                     logAdbConnectionChanged(AdbProtoEnums.ADB_WIFI_DEVICE_DISCONNECTED);
                 }
                 case MSG_SERVER_CONNECTED -> {
-                    if (mSafetyWifiDisabled) break;
                     int port = (int) msg.obj;
                     onAdbdWifiServerConnected(port);
                     mAdbWirelessInfo = new AdbWirelessInfo(port, mAdbWirelessInfo.hostname());
@@ -1173,7 +1144,6 @@ public class AdbDebuggingManager {
                     stopTLSPortPoller();
                 }
                 case MSG_ADBD_SOCKET_CONNECTED -> {
-                    if (mSafetyWifiDisabled) break;
                     Slog.d(TAG, "adbd socket connected");
                     if (mAdbWifiEnabled) {
                         if (com.android.server.adb.Flags.allowAdbWifiReconnect()) {
@@ -1205,7 +1175,6 @@ public class AdbDebuggingManager {
                     mAdbKeyStore.reloadKeyMap();
                 }
                 case MSG_REGISTER_SERVICE -> {
-                    if (mSafetyWifiDisabled) break;
                     Bundle bundle = (Bundle) msg.obj;
                     String instanceName = bundle.getString("instanceName");
                     String serviceType = bundle.getString("serviceType");
@@ -1225,7 +1194,6 @@ public class AdbDebuggingManager {
                     mAdbdServicesManager.onAttributeChanged();
                 }
                 case MSG_ON_LOCALHOSTNAME_KNOWN -> {
-                    if (mSafetyWifiDisabled) break;
                     String hostname = (String) msg.obj;
                     mAdbWirelessInfo =
                             new AdbWirelessInfo(mAdbWirelessInfo.port(), Optional.of(hostname));
@@ -1377,9 +1345,6 @@ public class AdbDebuggingManager {
                                     + "prompt",
                             bssid, ssid));
 
-            // Match callbacks only to a currently outstanding network confirmation.
-            mPendingWifiBssid = bssid;
-            mPendingWifiSsid = ssid;
             // Ask user to confirm using wireless debugging on this network.
             startConfirmationForNetwork(ssid, bssid);
             return false;
@@ -1618,28 +1583,6 @@ public class AdbDebuggingManager {
         return mUserKeyFile;
     }
 
-    // A safety shutdown invalidates pending trust dialogs, network restarts and pairing.
-    // All enable/disable actions are serialized on FgThread by AdbService.
-    private volatile boolean mSafetyUsbDisabled;
-    private volatile boolean mSafetyWifiDisabled;
-    // FgThread-confined acceptance token. A manual transport enable cannot revive an old pair.
-    private boolean mPairingSessionAccepted;
-    // Handler-confined outstanding network prompt. Never accept an unsolicited old dialog result.
-    private String mPendingWifiBssid;
-    private String mPendingWifiSsid;
-
-    void disableDebuggingForSafety() {
-        mSafetyUsbDisabled = true;
-        mSafetyWifiDisabled = true;
-        mPairingSessionAccepted = false;
-        mFingerprints = null;
-        mPendingWifiBssid = null;
-        mPendingWifiSsid = null;
-        disablePairing();
-        setAdbEnabled(false, AdbTransportType.USB);
-        setAdbEnabled(false, AdbTransportType.WIFI);
-    }
-
     /**
      * When {@code enabled} is {@code true}, this allows ADB debugging and starts the ADB handler
      * thread. When {@code enabled} is {@code false}, this disallows ADB debugging for the
@@ -1647,11 +1590,6 @@ public class AdbDebuggingManager {
      * all transport types are disabled, the ADB handler thread will shut down.
      */
     public void setAdbEnabled(boolean enabled, byte transportType) {
-        if (enabled) {
-            if (transportType == AdbTransportType.USB) mSafetyUsbDisabled = false;
-            if (transportType == AdbTransportType.WIFI) mSafetyWifiDisabled = false;
-        }
-
         switch (transportType) {
             case AdbTransportType.USB ->
                     mHandler.sendEmptyMessage(
