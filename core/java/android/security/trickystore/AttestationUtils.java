@@ -480,23 +480,10 @@ public final class AttestationUtils {
     }
 
     private static int findVintfKeymasterVersion() {
-        try {
-            String[] entries = VintfObject.getHalNamesAndVersions();
-            if (entries == null) return -1;
-            int version = -1;
-            for (String entry : entries) {
-                if ("android.hardware.keymaster@4.1".equals(entry)) {
-                    return 41;
-                }
-                if ("android.hardware.keymaster@4.0".equals(entry)) {
-                    version = 4;
-                }
-            }
-            return version;
-        } catch (RuntimeException | LinkageError e) {
-            Log.d(TAG, "Unable to query VINTF Keymaster versions", e);
-            return -1;
-        }
+        // VintfObject is a CTS API: its JNI calls UiAutomation to run "vintf dm".
+        // There is no instrumentation in system_server, so read device manifests
+        // directly, as we already do for declared KeyMint versions.
+        return findDeclaredHalVersion(true);
     }
 
     private static int findVintfKeyMintVersion() {
@@ -537,30 +524,93 @@ public final class AttestationUtils {
     }
 
     private static int findDeclaredKeyMintVersion() {
+        return findDeclaredHalVersion(false);
+    }
+
+    private static int findDeclaredHalVersion(boolean legacyKeymaster) {
         final String[] dirs = {
                 "/vendor/etc/vintf", "/odm/etc/vintf",
                 "/system/etc/vintf", "/system_ext/etc/vintf"
         };
         int version = -1;
         for (String dir : dirs) {
-            version = minKnownVersion(version,
-                    readKeyMintVersionFromManifest(new File(dir, "manifest.xml")));
+            version = mergeHalVersion(version,
+                    readHalVersionFromManifest(new File(dir, "manifest.xml"), legacyKeymaster),
+                    legacyKeymaster);
 
             String sku = SystemProperties.get("ro.boot.product.hardware.sku", "");
             if (!sku.isEmpty() && sku.matches("[A-Za-z0-9_.-]+")) {
-                version = minKnownVersion(version, readKeyMintVersionFromManifest(
-                        new File(dir, "manifest_" + sku + ".xml")));
+                version = mergeHalVersion(version, readHalVersionFromManifest(
+                        new File(dir, "manifest_" + sku + ".xml"), legacyKeymaster), legacyKeymaster);
             }
             File[] fragments = new File(dir, "manifest").listFiles();
             if (fragments == null) continue;
             for (File fragment : fragments) {
                 if (fragment.isFile() && fragment.getName().endsWith(".xml")) {
-                    version = minKnownVersion(version,
-                            readKeyMintVersionFromManifest(fragment));
+                    version = mergeHalVersion(version,
+                            readHalVersionFromManifest(fragment, legacyKeymaster), legacyKeymaster);
                 }
             }
         }
         return version;
+    }
+
+    private static int mergeHalVersion(int a, int b, boolean legacyKeymaster) {
+        return legacyKeymaster ? Math.max(a, b) : minKnownVersion(a, b);
+    }
+
+    private static int readHalVersionFromManifest(File file, boolean legacyKeymaster) {
+        return legacyKeymaster ? readKeymasterVersionFromManifest(file)
+                : readKeyMintVersionFromManifest(file);
+    }
+
+    private static int readKeymasterVersionFromManifest(File file) {
+        if (!file.isFile()) return -1;
+        int found = -1;
+        try (FileInputStream stream = new FileInputStream(file)) {
+            XmlPullParser parser = Xml.newPullParser();
+            parser.setInput(stream, "UTF-8");
+            int halDepth = -1;
+            boolean hidl = false;
+            String halName = null;
+            int version = -1;
+            for (int event = parser.getEventType(); event != XmlPullParser.END_DOCUMENT;
+                    event = parser.next()) {
+                if (event == XmlPullParser.START_TAG) {
+                    String tag = parser.getName();
+                    if ("hal".equals(tag) && halDepth < 0) {
+                        halDepth = parser.getDepth();
+                        String format = parser.getAttributeValue(null, "format");
+                        hidl = format == null || "hidl".equals(format);
+                        halName = null;
+                        version = -1;
+                    } else if (hidl && parser.getDepth() == halDepth + 1) {
+                        if ("name".equals(tag)) {
+                            halName = parser.nextText().trim();
+                        } else if ("version".equals(tag) || "fqname".equals(tag)) {
+                            String value = parser.nextText().trim();
+                            // HIDL versions use 4.1; fqnames use @4.1::IKeymasterDevice/default.
+                            if (value.startsWith("@")) value = value.substring(1);
+                            if (value.equals("4.1") || value.startsWith("4.1::")) {
+                                version = 41;
+                            } else if ((value.equals("4.0") || value.startsWith("4.0::"))
+                                    && version < 0) {
+                                version = 4;
+                            }
+                        }
+                    }
+                } else if (event == XmlPullParser.END_TAG && "hal".equals(parser.getName())
+                        && parser.getDepth() == halDepth) {
+                    if (hidl && "android.hardware.keymaster".equals(halName)) {
+                        found = Math.max(found, version);
+                    }
+                    halDepth = -1;
+                }
+            }
+        } catch (Exception e) {
+            Log.d(TAG, "Unable to parse VINTF manifest " + file.getPath(), e);
+        }
+        return found;
     }
 
     private static int minKnownVersion(int a, int b) {
