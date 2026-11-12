@@ -411,6 +411,11 @@ public final class AttestationUtils {
         if (halVersion > 0 && sdkVersion >= 100) {
             return Math.min(sdkVersion, halVersion * 100);
         }
+        // Launch API level does not imply KeyMint: some Android 12 devices
+        // still expose a legacy Keymaster 4.x HAL.
+        if (halVersion <= 0 && findVintfKeymasterVersion() > 0) {
+            return 4;
+        }
         final int firstApiLevel = SystemProperties.getInt("ro.product.first_api_level", -1);
         if (firstApiLevel > 0) {
             return apiLevelToAttestVersion(firstApiLevel);
@@ -420,7 +425,9 @@ public final class AttestationUtils {
 
     public static int getKeymasterVersion() {
         int attestVersion = getAttestVersion();
-        return attestVersion == 4 ? 41 : attestVersion;
+        if (attestVersion != 4) return attestVersion;
+        final int legacyVersion = findVintfKeymasterVersion();
+        return legacyVersion > 0 ? legacyVersion : 41;
     }
 
     private static int getSdkAttestVersion() {
@@ -467,7 +474,27 @@ public final class AttestationUtils {
                 return detected;
             }
             sKeyMintAidlVersion = -1;
-            Log.w(TAG, "KeyMint HAL version unavailable; using Android SDK fallback");
+            Log.w(TAG, "KeyMint HAL version unavailable; checking legacy Keymaster or SDK fallback");
+            return -1;
+        }
+    }
+
+    private static int findVintfKeymasterVersion() {
+        try {
+            String[] entries = VintfObject.getHalNamesAndVersions();
+            if (entries == null) return -1;
+            int version = -1;
+            for (String entry : entries) {
+                if ("android.hardware.keymaster@4.1".equals(entry)) {
+                    return 41;
+                }
+                if ("android.hardware.keymaster@4.0".equals(entry)) {
+                    version = 4;
+                }
+            }
+            return version;
+        } catch (RuntimeException | LinkageError e) {
+            Log.d(TAG, "Unable to query VINTF Keymaster versions", e);
             return -1;
         }
     }
