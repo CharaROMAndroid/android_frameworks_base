@@ -33,6 +33,7 @@ import android.provider.Settings
 import android.util.Log
 import android.util.TypedValue
 import android.view.View
+import android.view.CrossWindowBlurListeners.CROSS_WINDOW_BLUR_SUPPORTED
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ImageView
@@ -187,7 +188,13 @@ class MediaViewController @Inject constructor(
     }
 
     private fun setupMediaFilter() {
-        val effect = when (mediaFilter) {
+        // Ignore saved blur filters as well as hiding their controls on unsupported devices.
+        val filter = if (!CROSS_WINDOW_BLUR_SUPPORTED && (mediaFilter == 1 || mediaFilter == 6)) {
+            0
+        } else {
+            mediaFilter
+        }
+        val effect = when (filter) {
             1 -> RenderEffect.createBlurEffect(
                 mediaBlurLevel.toFloat(), 
                 mediaBlurLevel.toFloat(), 

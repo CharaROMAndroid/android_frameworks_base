@@ -37,7 +37,8 @@ public abstract class BlurUtils {
     }
 
     public static boolean isVolumeAndPowerBlurEnabled() {
-        return blurOnMoreSurfaces() && isBlurExpansionEnabledOnDevice();
+        return CROSS_WINDOW_BLUR_SUPPORTED && blurOnMoreSurfaces()
+                && isBlurExpansionEnabledOnDevice();
     }
 
     private static boolean isBlurExpansionEnabledOnDevice() {
